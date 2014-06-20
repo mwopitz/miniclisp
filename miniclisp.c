@@ -6,7 +6,7 @@ enum exprtype {EXPRLIST, EXPRSYM, EXPRINT};
 typedef struct expr{
 	enum exprtype type;
 	union{
-		int intvalue;
+		long int intvalue;
 		char symvalue[MAXTOKENLEN];
 		struct expr * listptr;		 
 	};
@@ -22,6 +22,9 @@ void printexpr(expr* e){
 			t=t->next;
 		}
 		printf("] ");
+	}
+	else if(e->type==EXPRINT){
+		printf("INT: %lld",e->intvalue);
 	}
 	else{
 		printf(" SYM:'%s' ",e->symvalue);
@@ -81,11 +84,17 @@ expr * read (char ** s){
 			exit(0);
 		}
 		expr * newexpr=malloc(sizeof(expr));
-		newexpr->type=EXPRSYM;
-		strncpy(newexpr->symvalue,tptr,tokenlen);
-		newexpr->symvalue[tokenlen]=0;
-		newexpr->next=0;
-		printf("New TOKEN: '%s'(%d)\n",newexpr->symvalue,tokenlen);
+		newexpr->type=EXPRINT;
+		char *afternum=0;
+		newexpr->intvalue=strtol(tptr,&afternum,0);
+		if(afternum==tptr)
+		{
+			newexpr->type=EXPRSYM;
+			strncpy(newexpr->symvalue,tptr,tokenlen);
+			newexpr->symvalue[tokenlen]=0;
+			newexpr->next=0;
+			//printf("New TOKEN: '%s'(%d)\n",newexpr->symvalue,tokenlen);
+		}
 		*s=tmpptr;
 		return newexpr;
 }
