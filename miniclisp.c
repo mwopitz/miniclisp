@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define MAXTOKENLEN 32
 
@@ -16,8 +18,8 @@ typedef struct expr{
 
 typedef struct dictentry{
 	expr *sym;
-	expr * value;
-	struct dictentry * next;
+	expr *value;
+	struct dictentry *next;
 }dictentry;
 
 typedef struct env{
@@ -25,12 +27,12 @@ typedef struct env{
 	struct env *outer;
 }env;
 
-expr * findInDict(expr *e,env *en) {
+expr *findInDict(expr *e,env *en) {
 	if(e==NULL || en ==NULL)
 		return NULL;
 	dictentry * d= en->list;
 	while(d !=NULL){
-		if(strcmp(e->symvalue,d->value)==0)
+		if(strcmp(e->symvalue, d->sym->symvalue) == 0)
 			return d->value;
         	d=d->next;
 	}
@@ -129,7 +131,7 @@ expr * read (char ** s){
 
 expr * math(expr *args,int neutral,int (*func)(int,int)){
 	if(args->type == EXPRINT)
-		return args->intvalue;
+		return args;
 	else if (args->type == EXPRLIST){
 		int res=neutral;
 		expr *arg = args->listptr;
