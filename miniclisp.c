@@ -73,6 +73,56 @@ void addToExprlist(expr *list,expr * new){
 	}
 }
 
+/*
+ * Add a key-value pair to an environment.
+ * Values for existing keys are overridden.
+ * Params:
+ *   env : An environment struct pointer. Must be non-NULL.
+ *   sym : New key to be inserted. Must be non-NULL.
+ *   value : Value to be inserted/updated. Must be non-NULL.
+ * Returns:
+ *   The updated dict entry or NULL if there was an error.
+ */
+dictentry *addToEnv(env *env, expr *sym, expr *value)
+{
+    if (env == NULL || sym == NULL || value == NULL)
+      return NULL;
+
+    dictentry *current_dict_entry = env->list;
+
+    /* Add new list head if the dictionary is emtpy. */
+    if (current_dict_entry == NULL) {
+        current_dict_entry = malloc(sizeof(dictentry));
+        current_dict_entry->sym = sym;
+        current_dict_entry->value = value;
+        current_dict_entry->next = NULL;
+        return current_dict_entry;
+    }
+
+    /* Search dictionary for the last entry or an existing key. */
+    while (current_dict_entry->next != NULL) {
+        /* Break if an exising key was found. */
+        if (current_dict_entry->next->sym->type == EXPRSYM && strcmp(current_dict_entry->next->sym->symvalue, sym->symvalue) == 0) {
+          /* TODO: Double check whether both frees are necessary/legal. */
+          free(current_dict_entry->next->sym);
+          free(current_dict_entry->next->value);
+          break;
+        }
+        current_dict_entry = current_dict_entry->next;
+    }
+
+    /* Add new last entry. */
+    if (current_dict_entry->next == NULL) {
+      current_dict_entry->next = malloc(sizeof(dictentry));
+      current_dict_entry->next->next = NULL;
+    }
+
+    current_dict_entry->next->sym = sym;
+    current_dict_entry->next->value = value;
+
+    return current_dict_entry->next;
+}
+
 expr * read (char ** s){
 	printf("Read called with %s\n",*s);
 	char * tptr;
