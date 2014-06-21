@@ -242,6 +242,37 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 
 env *global_env;
 
+expr *eval(expr *, env *);
+
+expr *evalList(expr * e, env * en)
+{
+	if (e->type != EXPRLIST) {
+		printf("ERROR not an list\n");
+		exit(-1);
+	}
+	expr *te = e->listptr;
+	expr *prev = NULL;
+	while (te != 0) {
+		expr *savednext = te->next;
+		te = eval(te, en);
+		if (te == NULL) {
+			printf("[evalList] remove empty entry from list\n");
+		} else {
+			if (prev == NULL) {
+				e->listptr = te;
+			} else {
+				prev->next = te;
+				te->next = 0;
+			}
+			prev = te;
+			te->next = savednext;
+		}
+		te = savednext;
+	}
+	return prev;
+
+}
+
 expr *eval(expr * e, env * en)
 {
 	debug_info("%s", "eval called with");
@@ -256,7 +287,9 @@ expr *eval(expr * e, env * en)
 				e->symvalue);
 			exit(-1);
 		}
-		return res;
+		expr *copyexpr = malloc(sizeof(expr));
+		memcpy(copyexpr, res, sizeof(expr));
+		return copyexpr;
 	}
 	if (e->type != EXPRLIST) {
 		return e;
@@ -324,24 +357,19 @@ expr *eval(expr * e, env * en)
 		}
 
 	}
-	expr *te = e->listptr;
-	expr *procexpr = e->listptr;
-	/* first element is the proc skip this and evaluate the shorter list */
-	e->listptr = 0;
-	while (te != 0 && te->next != 0) {
-		expr *savednext = te->next->next;
-		te->next = eval(te->next, en);
-		te->next->next = savednext;
-		te = te->next;
-		if (e->listptr == 0)
-			e->listptr = te;
+	if (strcmp(e->listptr->symvalue, "begin") == 0) {
+		e->listptr = e->listptr->next;
+		return evalList(e, en);
 	}
-	procexpr = eval(procexpr, en);
-	if (procexpr->type == EXPRPROC) {
+	evalList(e, en);
+	if (e->listptr->type == EXPRPROC) {
+		expr *proc = e->listptr;
+		/** delete proc from list **/
+		e->listptr = e->listptr->next;
 		printf("Call proc!\n");
 		printexpr(e);
 		printf("---\n");
-		expr *res = procexpr->proc(e);
+		expr *res = proc->proc(e);
 		res->next = 0;
 		printexpr(res);
 		printf("---\n");
