@@ -68,9 +68,38 @@ expr *getNext(expr * e, int i)
 	return NULL;
 }
 
+/*
+ * Return the length of an expression list.
+ * Params:
+ *   e : An expr struct pointer. This should be an expression list.
+ * Returns:
+ *   the length of the list or -1 if e is not an expression list.
+ */
+int getListSize(expr * e)
+{
+	if (e == NULL) {
+		printf("[getListSize] Error: argument e is NULL.\n");
+		return -1;
+	}
+	if (e->type != EXPRLIST) {
+		printf
+		    ("[getListSize] Error: argument e is not an expression list.\n");
+		return -1;
+	}
+	int counter = 0;
+	expr *current_list_entry = e->listptr;
+	while (current_list_entry != NULL) {
+		current_list_entry = current_list_entry->next;
+		counter++;
+	}
+	return counter;
+}
+
 void printexpr(expr * e)
 {
-	if (e->type == EXPRLIST) {
+	if (e == NULL) {
+		printf("nil");
+	} else if (e->type == EXPRLIST) {
 		printf(" EXPRLIST[");
 		expr *t = e->listptr;
 		while (t != NULL) {
@@ -130,11 +159,11 @@ expr *createExprSym(const char *s)
  *   env : An environment struct pointer. Must be non-NULL.
  *   sym : New key to be inserted. Must be non-NULL.
  *   value : Value to be inserted/updated. Must be non-NULL.
- *   add_nonexisting : true if exsiting values can/should be overriden.
+ *   set : true if value should be set globally.
  * Returns:
  *   The updated dict entry or NULL if there was an error.
  */
-dictentry *addToEnv(env * env, expr * sym, expr * value, bool add_nonexisting)
+dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 {
 	if (env == NULL || sym == NULL || value == NULL)
 		return NULL;
@@ -143,15 +172,18 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool add_nonexisting)
 
 	/* Add new list head if the dictionary is emtpy. */
 	if (current_dict_entry == NULL) {
+		if (env->outer == NULL && set) {
+			printf("Error. Variable %s not defined.\n",
+			       sym->symvalue);
+			return NULL;
+		} else if (set) {
+			return addToEnv(env->outer, sym, value, set);
+		}
 		current_dict_entry = malloc(sizeof(dictentry));
 		current_dict_entry->sym = sym;
 		current_dict_entry->value = value;
 		current_dict_entry->next = NULL;
 		env->list = current_dict_entry;
-		if (!add_nonexisting) {
-			printf("Error. Not allowed to insert new value. ");
-			return NULL;
-		}
 		return current_dict_entry;
 	}
 
@@ -171,14 +203,18 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool add_nonexisting)
 
 	/* Add new last entry. */
 	if (current_dict_entry->next == NULL) {
-		if (!add_nonexisting) {
-			printf("Error. Not allowed to insert new value. ");
+		if (env->outer == NULL && set) {
+			return addToEnv(env->outer, sym, value, set);
+		} else if (set) {
+			printf("Error. Variable %s not defined here.\n",
+			       sym->symvalue);
 			return NULL;
 		}
 		current_dict_entry->next = malloc(sizeof(dictentry));
 		current_dict_entry->next->next = NULL;
 	}
 
+	/* Update new entry. */
 	current_dict_entry->next->sym = sym;
 	current_dict_entry->next->value = value;
 
@@ -196,13 +232,15 @@ expr *eval(expr * e, env * en)
 		printf("SYM\n");
 		expr *res = findInDict(e, en);
 		if (res == NULL) {
-			printf("Variable not defined here %s\n", e->symvalue);
+			printf("[eval] Error: Variable not defined here: %s.\n",
+			       e->symvalue);
 			exit(-1);
 		}
 		return res;
 	}
-	if (e->type != EXPRLIST)
+	if (e->type != EXPRLIST) {
 		return e;
+	}
 	if (e->listptr == NULL) {
 		printf("Error empty list probably ()\n");
 		exit(-1);
@@ -211,20 +249,45 @@ expr *eval(expr * e, env * en)
 		printf("No valid symvalue aft (\n");
 		exit(-1);
 	}
+	/* DEFINE */
+	if (strcmp(e->listptr->symvalue, "define") == 0) {
+		if (getListSize(e) != 3) {
+			printf
+			    ("[eval] Error: Too few arguments for 'define'.\n");
+			exit(-1);
+		}
+		expr *key = getNext(e, 1);
+		expr *value = getNext(e, 2);
+		if (key->type != EXPRSYM) {
+			printf
+			    ("[eval] Error: Argument 1 for 'define' is not a symbol.\n");
+			exit(-1);
+		}
+		key->next = eval(value, en);
+		if (addToEnv(en, key, value, false) == NULL) {
+			printf("[eval] Error: Could not define %s.\n",
+			       key->symvalue);
+			exit(-1);
+		}
+		printf("[eval] Defined value %s.\n", key->symvalue);
+		return 0;
+	}
+	/* QUOTE */
 	if (strcmp(e->listptr->symvalue, "quote") == 0) {
 		expr *next = e->listptr->next;
 		free(e->listptr);
 		e->listptr = next;
 		return e;
 	}
+	/* IF */
 	if (strcmp(e->listptr->symvalue, "if") == 0) {
-		if (getNext(e, 3) == NULL || getNext(e, 4) != NULL) {
-			printf("not right number of arguments for if\n");
+		if (getListSize(e) != 4) {
+			printf("[eval] Error. Too few arguments for 'if'.\n");
 			exit(-1);
 		}
-		expr *cond = eval(e->listptr->next, en);
-		expr *trueex = e->listptr->next->next;
-		expr *falseex = e->listptr->next->next->next;
+		expr *cond = eval(getNext(e, 1), en);
+		expr *trueex = getNext(e, 2);
+		expr *falseex = getNext(e, 3);
 		if (cond->type == EXPRINT)
 			return eval(trueex, en);
 		else if (cond->type != EXPRSYM) {
@@ -265,7 +328,11 @@ expr *eval(expr * e, env * en)
 		return res;
 	}
 
-	return e;
+	/* We should never arrive here... */
+	printf("[eval] Error: Could not evaluate expression: ");
+	printexpr(e);
+	printf("\n");
+	exit(-1);
 }
 
 expr *read(char *s[])
@@ -354,16 +421,53 @@ expr *add(expr * args)
 	math(args, 0, addInt);
 }
 
+bool testInt(char *str, int intvalue, env * en)
+{
+
+	char *tmp = str;
+	expr *retval = eval(read(&str), en);
+	if (retval->type == EXPRINT && retval->intvalue == intvalue) {
+		printf("[testInt] Success. %s == %d\n", tmp, intvalue);
+		return true;
+	}
+	printf("[testInt] Error. Test failed for %s : %d. Result: ", tmp,
+	       intvalue);
+	printexpr(retval);
+	printf("\n");
+	return false;
+}
+
+void initGlobal(env * en)
+{
+	en->outer = 0;
+	en->list = 0;
+	addToEnv(en, createExprSym(TRUE), createExprSym(TRUE), false);
+	addToEnv(en, createExprSym(FALSE), createExprSym(FALSE), false);
+	addToEnv(en, createExprSym("+"), createExprProc(add), false);
+}
+
+int runTests()
+{
+	env *test_env = malloc(sizeof(env));
+	initGlobal(test_env);
+
+	printf("Running tests...\n");
+
+	testInt("(+ 1337 42)", 1379, test_env);
+	testInt("0", 1, test_env);
+
+	free(test_env);
+}
+
 #define MAXINPUT 512
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
 	global_env = malloc(sizeof(env));
-	global_env->outer = 0;
-	global_env->list = 0;
-	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE), true);
-	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE), true);
-	addToEnv(global_env, createExprSym("+"), createExprProc(add), true);
+	initGlobal(global_env);
+
+	runTests();
+
 	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
 		printf("> ");
