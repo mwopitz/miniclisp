@@ -52,9 +52,9 @@ void printexpr(expr * e)
 			printexpr(t);
 			t = t->next;
 		}
-		printf("] ");
+		printf("]");
 	} else if (e->type == EXPRINT) {
-		printf("INT: %lld", e->intvalue);
+		printf(" INT: %lld ", e->intvalue);
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
@@ -136,7 +136,7 @@ expr *eval(expr * e, env * en)
 	printexpr(e);
 	printf("\n");
 	if (e->type == EXPRSYM) {
-		printf("SYMMMM\n");
+		printf("SYM\n");
 		expr *res = findInDict(e, en);
 		if (res == NULL) {
 			printf("Variable not defined here %s\n", e->symvalue);
@@ -277,8 +277,10 @@ expr *add(expr * args)
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
-	printf("Interactive Scheme interpreter:");
+	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
+		printf("> ");
+		fflush(stdout);
 		fgets(inputbuf, MAXINPUT, stdin);
 		char *newline = strrchr(inputbuf, '\n');
 		if (newline != NULL)
@@ -286,5 +288,6 @@ int main(int argc, char **argv)
 		printf("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
 		printexpr(read(&ptr));
+		putchar('\n');
 	}
 }
