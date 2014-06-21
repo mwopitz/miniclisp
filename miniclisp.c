@@ -155,6 +155,12 @@ void printexpr(expr * e)
 		printf("]");
 	} else if (e->type == EXPRINT) {
 		printf(" INT: %lld ", e->intvalue);
+	} else if (e->type == EXPRLAMBDA) {
+		printf("[LAMBDA EXPR ARGS:");
+		printexpr(e->lambdavars);
+		printf(" BODY ");
+		printexpr(e->lambdaexpr);
+		printf("]");
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
@@ -399,7 +405,58 @@ expr *eval(expr * e, env * en)
 		e->listptr = e->listptr->next;
 		return evalList(e, en);
 	}
+	if (strcmp(e->listptr->symvalue, "lambda") == 0) {
+		expr *args = getNext(e, 1);
+		if (args->type != EXPRLIST) {
+			printf
+			    ("[eval] Error First Lambda Parameter must be a list\n");
+			exit(-1);
+		}
+		/* List with only the body */
+		e->listptr = args->next;
+		expr *lambda = malloc(sizeof(expr));
+		lambda->type = EXPRLAMBDA;
+		lambda->lambdavars = args;
+		lambda->lambdaexpr = e;
+		return lambda;
+
+	}
 	evalList(e, en);
+	if (e->listptr->type == EXPRLAMBDA) {
+		env *newenv = malloc(sizeof(env));
+		newenv->outer = en;
+		newenv->list = 0;
+		int argnum = getListSize(e->listptr->lambdavars);
+		if (argnum != getListSize(e) - 1) {
+			printf
+			    ("[eval] Error: Wrong number of arguments for lambda %d required: %d\n",
+			     argnum, getListSize(e) - 1);
+			exit(-1);
+		}
+		expr *args = e->listptr->lambdavars->listptr;
+		expr *val = e->listptr->next;
+		while (args != NULL) {
+			if (args->type != EXPRSYM) {
+				printf
+				    ("(eval] Error: Wrong parameter list for lambda\n");
+			}
+			addToEnv(newenv, args, val, false);
+			args = args->next;
+			val = val->next;
+		}
+		debug_info("%s", "[eval] Evaluate Lambd Expr\n");
+		expr *res = 0;
+		printexpr(e->listptr->lambdaexpr);
+		if (e->listptr->lambdaexpr->type == EXPRLIST) {
+			debug_info("%s", " as list\n");
+			res = evalList(e->listptr->lambdaexpr, newenv);
+		} else {
+			debug_info("%s", "as single expr\n");
+			expr *res = eval(e->listptr->lambdaexpr, newenv);
+		}
+		free(newenv);
+		return res;
+	}
 	if (e->listptr->type == EXPRPROC) {
 		expr *proc = e->listptr;
 		/** delete proc from list **/
