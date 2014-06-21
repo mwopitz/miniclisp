@@ -44,6 +44,29 @@ expr *findInDict(expr * e, env * en)
 	return findInDict(e, en->outer);
 }
 
+/*
+ * Returns the i-th entry of an expr list.
+ * Params:
+ *   i : the number of the requested entry. 0 is the list head.
+ * Returns:
+ *   a pointer to the list entry i or NULL if none was found.
+ */
+expr *getNext(expr *e, int i)
+{
+    if (e == NULL || e->type != EXPRLIST || i < 0)
+      return NULL;
+
+    int counter = 0;
+    expr *current = e;
+    while (current != NULL) {
+      if (counter == i)
+        return current;
+      current = current->next;
+    }
+
+    return NULL;
+}
+
 void printexpr(expr * e)
 {
 	if (e->type == EXPRLIST) {
@@ -160,7 +183,7 @@ expr *eval(expr * e, env * en)
 	printexpr(e);
 	printf("\n");
 	if (e->type == EXPRSYM) {
-		printf("SYMMMM\n");
+		printf("SYM\n");
 		expr *res = findInDict(e, en);
 		if (res == NULL) {
 			printf("Variable not defined here %s\n", e->symvalue);
