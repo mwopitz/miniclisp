@@ -290,6 +290,7 @@ int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
 	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE));
+	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE));
 	printf("Interactive Scheme interpreter:");
 	while (1) {
 		fgets(inputbuf, MAXINPUT, stdin);
