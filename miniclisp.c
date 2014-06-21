@@ -57,14 +57,12 @@ expr *getNext(expr * e, int i)
 		return NULL;
 
 	int counter = 0;
-	expr *current = e;
+	expr *current = e->listptr;
 	while (current != NULL) {
 		if (counter == i)
 			return current;
-		if (current == e)
-			current = e->listptr;
-		else
-			current = current->next;
+		current = current->next;
+		counter++;
 	}
 
 	return NULL;
