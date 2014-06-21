@@ -51,20 +51,23 @@ expr *findInDict(expr * e, env * en)
  * Returns:
  *   a pointer to the list entry i or NULL if none was found.
  */
-expr *getNext(expr *e, int i)
+expr *getNext(expr * e, int i)
 {
-    if (e == NULL || e->type != EXPRLIST || i < 0)
-      return NULL;
+	if (e == NULL || e->type != EXPRLIST || i < 0)
+		return NULL;
 
-    int counter = 0;
-    expr *current = e;
-    while (current != NULL) {
-      if (counter == i)
-        return current;
-      current = current->next;
-    }
+	int counter = 0;
+	expr *current = e;
+	while (current != NULL) {
+		if (counter == i)
+			return current;
+		if (current == e)
+			current = e->listptr;
+		else
+			current = current->next;
+	}
 
-    return NULL;
+	return NULL;
 }
 
 void printexpr(expr * e)
