@@ -76,6 +76,18 @@ void addToExprlist(expr * list, expr * new)
 	}
 }
 
+expr *createExprSym(const char *s)
+{
+	expr *newexpr = malloc(sizeof(expr));
+	newexpr->next = NULL;
+	int len = strlen(s);
+	if (len >= MAXTOKENLEN - 1) {
+		printf("To long token\n");
+		exit(-1);
+	}
+	strcpy(newexpr->symvalue, s);
+}
+
 /*
  * Add a key-value pair to an environment.
  * Values for existing keys are overridden.
@@ -277,6 +289,7 @@ expr *add(expr * args)
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
+	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE));
 	printf("Interactive Scheme interpreter:");
 	while (1) {
 		fgets(inputbuf, MAXINPUT, stdin);
