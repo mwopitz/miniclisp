@@ -166,6 +166,7 @@ expr *eval(expr * e, env * en)
 		printf("No valid symvalue aft (\n");
 		exit(-1);
 	}
+	printf("Try to execute: %s\n", e->symvalue);
 	if (strcmp(e->listptr->symvalue, "quote") == 0) {
 		expr *next = e->listptr->next;
 		free(e->listptr);
@@ -289,6 +290,9 @@ expr *add(expr * args)
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
+	global_env = malloc(sizeof(env));
+	global_env->outer = 0;
+	global_env->list = 0;
 	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE));
 	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE));
 	printf("Interactive Scheme interpreter:");
@@ -299,6 +303,6 @@ int main(int argc, char **argv)
 			*newline = 0;
 		printf("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
-		printexpr(read(&ptr));
+		printexpr(eval(read(&ptr), global_env));
 	}
 }
