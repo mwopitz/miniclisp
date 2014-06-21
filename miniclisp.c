@@ -33,6 +33,7 @@ typedef struct expr {
 	struct expr *lambdaexpr;
 	struct expr *(*proc) (struct expr *);
 	struct expr *next;
+	bool used;
 } expr;
 
 typedef struct dictentry {
@@ -45,6 +46,12 @@ typedef struct env {
 	dictentry *list;
 	struct env *outer;
 } env;
+
+expr *gc(expr * args)
+{
+	printf("Running garbage collection...\n");
+	return NULL;
+}
 
 expr *deepCopy(expr * e)
 {
@@ -483,7 +490,6 @@ expr *eval(expr * e, env * en)
 		debug_info("%s", "Call proc!\n");
 		printExprDebug(e);
 		expr *res = proc->proc(e);
-		res->next = 0;
 		printExprDebug(res);
 		return res;
 	}
@@ -666,6 +672,7 @@ void initGlobal(env * en)
 {
 	en->outer = 0;
 	en->list = 0;
+	addToEnv(en, createExprSym("gc"), createExprProc(gc), false);
 	addToEnv(en, createExprSym(TRUE), createExprSym(TRUE), false);
 	addToEnv(en, createExprSym(FALSE), createExprSym(FALSE), false);
 	addToEnv(en, createExprSym("+"), createExprProc(add), false);
