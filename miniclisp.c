@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define MAXTOKENLEN 32
 
@@ -92,15 +93,15 @@ expr *createExprSym(const char *s)
 
 /*
  * Add a key-value pair to an environment.
- * Values for existing keys are overridden.
  * Params:
  *   env : An environment struct pointer. Must be non-NULL.
  *   sym : New key to be inserted. Must be non-NULL.
  *   value : Value to be inserted/updated. Must be non-NULL.
+ *   add_nonexisting : true if exsiting values can/should be overriden.
  * Returns:
  *   The updated dict entry or NULL if there was an error.
  */
-dictentry *addToEnv(env * env, expr * sym, expr * value)
+dictentry *addToEnv(env * env, expr * sym, expr * value, bool add_nonexisting)
 {
 	if (env == NULL || sym == NULL || value == NULL)
 		return NULL;
@@ -114,6 +115,10 @@ dictentry *addToEnv(env * env, expr * sym, expr * value)
 		current_dict_entry->value = value;
 		current_dict_entry->next = NULL;
 		env->list = current_dict_entry;
+		if (!add_nonexisting) {
+			printf("Error. Not allowed to insert new value. ");
+			return NULL;
+		}
 		return current_dict_entry;
 	}
 
@@ -133,6 +138,10 @@ dictentry *addToEnv(env * env, expr * sym, expr * value)
 
 	/* Add new last entry. */
 	if (current_dict_entry->next == NULL) {
+		if (!add_nonexisting) {
+			printf("Error. Not allowed to insert new value. ");
+			return NULL;
+		}
 		current_dict_entry->next = malloc(sizeof(dictentry));
 		current_dict_entry->next->next = NULL;
 	}
@@ -295,8 +304,8 @@ int main(int argc, char **argv)
 	global_env = malloc(sizeof(env));
 	global_env->outer = 0;
 	global_env->list = 0;
-	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE));
-	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE));
+	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE), true);
+	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE), true);
 	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
 		printf("> ");
