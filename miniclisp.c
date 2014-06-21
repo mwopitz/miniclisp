@@ -52,9 +52,9 @@ void printexpr(expr * e)
 			printexpr(t);
 			t = t->next;
 		}
-		printf("] ");
+		printf("]");
 	} else if (e->type == EXPRINT) {
-		printf("INT: %lld", e->intvalue);
+		printf(" INT: %lld ", e->intvalue);
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
@@ -79,6 +79,7 @@ void addToExprlist(expr * list, expr * new)
 expr *createExprSym(const char *s)
 {
 	expr *newexpr = malloc(sizeof(expr));
+	newexpr->type = EXPRSYM;
 	newexpr->next = NULL;
 	int len = strlen(s);
 	if (len >= MAXTOKENLEN - 1) {
@@ -86,6 +87,7 @@ expr *createExprSym(const char *s)
 		exit(-1);
 	}
 	strcpy(newexpr->symvalue, s);
+	return newexpr;
 }
 
 /*
@@ -111,6 +113,7 @@ dictentry *addToEnv(env * env, expr * sym, expr * value)
 		current_dict_entry->sym = sym;
 		current_dict_entry->value = value;
 		current_dict_entry->next = NULL;
+		env->list = current_dict_entry;
 		return current_dict_entry;
 	}
 
@@ -166,7 +169,6 @@ expr *eval(expr * e, env * en)
 		printf("No valid symvalue aft (\n");
 		exit(-1);
 	}
-	printf("Try to execute: %s\n", e->symvalue);
 	if (strcmp(e->listptr->symvalue, "quote") == 0) {
 		expr *next = e->listptr->next;
 		free(e->listptr);
@@ -295,8 +297,10 @@ int main(int argc, char **argv)
 	global_env->list = 0;
 	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE));
 	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE));
-	printf("Interactive Scheme interpreter:");
+	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
+		printf("> ");
+		fflush(stdout);
 		fgets(inputbuf, MAXINPUT, stdin);
 		char *newline = strrchr(inputbuf, '\n');
 		if (newline != NULL)
@@ -304,5 +308,6 @@ int main(int argc, char **argv)
 		printf("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
 		printexpr(eval(read(&ptr), global_env));
+		printf("\n");
 	}
 }
