@@ -4,6 +4,9 @@
 
 #define MAXTOKENLEN 32
 
+const char * TRUE="#t";
+const char * FALSE="#f";
+
 enum exprtype {EXPRLIST, EXPRSYM, EXPRINT,EXPRLAMBDA,EXPPROC};
 typedef struct expr{
 	enum exprtype type;
@@ -72,6 +75,70 @@ void addToExprlist(expr *list,expr * new){
 		t->next=new;
 	}
 }
+
+env *global_env;
+
+expr * eval(expr *e ,env *en){
+	printf("Eval called with");
+	printexpr(e);
+	printf("\n");
+	if(e->type==EXPRSYM)
+	{
+		printf("SYMMMM\n");	
+		expr * res=findInDict(e,en);	
+		if(res==NULL){
+			printf("Variable not defined here %s\n",e->symvalue);
+			exit(-1);
+		}
+		return res;
+	}
+	if(e->type !=EXPRLIST)
+		return e;
+	if(e->listptr==NULL)
+	{
+		printf("Error empty list probably ()\n");
+		exit(-1);
+	}
+	if(e->listptr->type!=EXPRSYM)
+	{
+		printf("No valid symvalue aft (\n");
+		exit(-1);
+	}
+	if(strcmp(e->listptr->symvalue,"quote")==0){
+		expr* next=e->listptr->next;
+		free(e->listptr);
+		e->listptr=next;
+		return e;
+	}
+	if(strcmp(e->listptr->symvalue,"if")==0){
+		if(e->listptr->next== 0 || e->listptr->next->next==0 || e->listptr->next->next->next==0)
+		{
+			printf("not enough arguments for if\n");
+			exit(-1);
+		}
+		expr* cond=eval(e->listptr->next,en);
+		expr * trueex=e->listptr->next->next;
+		expr * falseex=e->listptr->next->next->next;
+		if(cond->type==EXPRINT)
+			return eval(trueex,en);
+		else if(cond->type!= EXPRSYM)
+		{
+			printf("Illegal if condition. Must be Symbol or number\n");
+			exit(-1);
+		}
+		else if(strcmp(cond->symvalue,TRUE)==0)
+			return eval(trueex,en);
+		else if(strcmp(cond->symvalue,FALSE)==0)
+			return eval(falseex,en);
+		else{
+			printf("Wrong Symbol");
+			exit(-1);
+		}
+		
+	}
+	return e;
+}
+
 
 expr * read (char ** s){
 	printf("Read called with %s\n",*s);
@@ -161,6 +228,9 @@ expr* add(expr *args){
 int main (int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
+	global_env=malloc(sizeof(env));
+	global_env->list=NULL;
+	global_env->outer=NULL;
 	printf("Interactive Scheme interpreter:");
 	while(1){
 		fgets(inputbuf,MAXINPUT,stdin);
@@ -169,7 +239,7 @@ int main (int argc, char **argv)
 			*newline=0;
 		printf("CALL READ with'%s'\n",inputbuf);
 		char *ptr= inputbuf;
-		printexpr(read(&ptr));
+		printexpr(eval(read(&ptr),global_env));
 	}
 }
 
