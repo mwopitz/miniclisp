@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#define ERREVAL -
+#define DEBUG 0
 
 #define print_err(fmt, ...) \
         do { fprintf(stderr, "[%s:%d] Error. " fmt, __func__, \
@@ -125,13 +125,11 @@ expr *getNext(expr * e, int i)
 int getListSize(expr * e)
 {
 	if (e == NULL) {
-		fprintf(stderr, "[getListSize] Error: argument e is NULL.\n");
+		print_err("%s", "Argument e is NULL.\n");
 		return -1;
 	}
 	if (e->type != EXPRLIST) {
-		fprintf
-		    (stderr,
-		     "[getListSize] Error: argument e is not an expression list.\n");
+		print_err("%s", "Argument e is not an expression list.\n");
 		return -1;
 	}
 	int counter = 0;
@@ -143,7 +141,7 @@ int getListSize(expr * e)
 	return counter;
 }
 
-void printexpr(expr * e)
+void _printexpr_rec(expr * e, int level)
 {
 	if (e == NULL) {
 		printf("nil");
@@ -151,7 +149,7 @@ void printexpr(expr * e)
 		printf(" EXPRLIST[");
 		expr *t = e->listptr;
 		while (t != NULL) {
-			printexpr(t);
+			_printexpr_rec(t, level++);
 			t = t->next;
 		}
 		printf("]");
@@ -159,14 +157,26 @@ void printexpr(expr * e)
 		printf(" INT: %lld ", e->intvalue);
 	} else if (e->type == EXPRLAMBDA) {
 		printf("[LAMBDA EXPR ARGS:");
-		printexpr(e->lambdavars);
+		_printexpr_rec(e->lambdavars, level++);
 		printf(" BODY ");
-		printexpr(e->lambdaexpr);
+		_printexpr_rec(e->lambdaexpr, level++);
 		printf("]");
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
+	if (level == 0)
+		putchar('\n');
+}
 
+void printexpr(expr * e)
+{
+	_printexpr_rec(e, 0);
+}
+
+void printExprDebug(expr * e)
+{
+	if (DEBUG)
+		printexpr(e);
 }
 
 void addToExprlist(expr * list, expr * new)
@@ -200,7 +210,7 @@ expr *createExprSym(const char *s)
 	newexpr->next = NULL;
 	int len = strlen(s);
 	if (len >= MAXTOKENLEN - 1) {
-		printf("To long token\n");
+		print_err("%s", "To long token\n");
 		exit(-1);
 	}
 	strcpy(newexpr->symvalue, s);
@@ -291,7 +301,7 @@ expr *eval(expr *, env *);
 expr *evalList(expr * e, env * en)
 {
 	if (e->type != EXPRLIST) {
-		printf("ERROR not an list\n");
+		print_err("%s", "Argument e is not a list.\n");
 		exit(-1);
 	}
 	expr *te = e->listptr;
@@ -300,7 +310,7 @@ expr *evalList(expr * e, env * en)
 		expr *savednext = te->next;
 		te = eval(te, en);
 		if (te == NULL) {
-			printf("[evalList] remove empty entry from list\n");
+			debug_info("%s", "Removing empty entry from list.\n");
 		} else {
 			if (prev == NULL) {
 				e->listptr = te;
@@ -320,15 +330,13 @@ expr *evalList(expr * e, env * en)
 expr *eval(expr * e, env * en)
 {
 	debug_info("%s", "eval called with");
-	printexpr(e);
-	printf("\n");
+	printExprDebug(e);
 
 	if (e->type == EXPRSYM) {
 		expr *res = findInDict(e, en);
 		if (res == NULL) {
-			fprintf(stderr,
-				"Error: Variable not defined here: %s.\n",
-				e->symvalue);
+			print_err("Variable not defined here: %s.\n",
+				  e->symvalue);
 			exit(-1);
 		}
 		expr *copyexpr = malloc(sizeof(expr));
@@ -339,7 +347,7 @@ expr *eval(expr * e, env * en)
 		return e;
 	}
 	if (e->listptr == NULL) {
-		fprintf(stderr, "Error empty list probably ()\n");
+		print_err("%s", "Empty list (probably...)\n");
 		exit(-1);
 	}
 	/* DEFINE */
@@ -368,7 +376,7 @@ expr *eval(expr * e, env * en)
 			print_err("Could not define/set %s.\n", key->symvalue);
 			exit(-1);
 		}
-		printf("[eval] Defined value %s.\n", key->symvalue);
+		debug_info("Defined value %s.\n", key->symvalue);
 		return 0;
 	}
 	/* QUOTE */
@@ -383,8 +391,8 @@ expr *eval(expr * e, env * en)
 	if (e->listptr->type == EXPRSYM
 	    && strcmp(e->listptr->symvalue, "if") == 0) {
 		if (getListSize(e) != 4) {
-			printf
-			    ("[eval] Error. Wrong number of arguments for 'if'.\n");
+			print_err
+			    ("%s", "Wrong number of arguments for 'if'.\n");
 			exit(-1);
 		}
 		expr *cond = eval(getNext(e, 1), en);
@@ -393,15 +401,16 @@ expr *eval(expr * e, env * en)
 		if (cond->type == EXPRINT)
 			return eval(trueex, en);
 		else if (cond->type != EXPRSYM) {
-			printf
-			    ("Illegal if condition. Must be Symbol or number\n");
+			print_err
+			    ("%s",
+			     "Illegal if condition. Must be Symbol or number\n");
 			exit(-1);
 		} else if (strcmp(cond->symvalue, TRUE) == 0)
 			return eval(trueex, en);
 		else if (strcmp(cond->symvalue, FALSE) == 0)
 			return eval(falseex, en);
 		else {
-			printf("Wrong Symbol");
+			print_err("%s", "Wrong Symbol");
 			exit(-1);
 		}
 
@@ -416,8 +425,8 @@ expr *eval(expr * e, env * en)
 	    && strcmp(e->listptr->symvalue, "lambda") == 0) {
 		expr *args = getNext(e, 1);
 		if (args->type != EXPRLIST) {
-			printf
-			    ("[eval] Error First Lambda Parameter must be a list\n");
+			print_err
+			    ("%s", "First Lambda Parameter must be a list\n");
 			exit(-1);
 		}
 		/* List with only the body */
@@ -436,8 +445,8 @@ expr *eval(expr * e, env * en)
 		newenv->list = 0;
 		int argnum = getListSize(e->listptr->lambdavars);
 		if (argnum != getListSize(e) - 1) {
-			printf
-			    ("[eval] Error: Wrong number of arguments for lambda %d required: %d\n",
+			print_err
+			    ("Wrong number of arguments for lambda %d required: %d\n",
 			     argnum, getListSize(e) - 1);
 			exit(-1);
 		}
@@ -445,16 +454,16 @@ expr *eval(expr * e, env * en)
 		expr *val = e->listptr->next;
 		while (args != NULL) {
 			if (args->type != EXPRSYM) {
-				printf
-				    ("(eval] Error: Wrong parameter list for lambda\n");
+				print_err
+				    ("%s", "Wrong parameter list for lambda\n");
 			}
 			addToEnv(newenv, args, val, false);
 			args = args->next;
 			val = val->next;
 		}
-		debug_info("%s", "[eval] Evaluate Lambd Expr\n");
+		debug_info("%s", "Evaluate Lambd Expr\n");
 		expr *res = 0;
-		printexpr(e->listptr->lambdaexpr);
+		printExprDebug(e->listptr->lambdaexpr);
 		expr *lambda_new = deepCopy(e->listptr->lambdaexpr);
 		if (lambda_new->type == EXPRLIST) {
 			debug_info("%s", " as list\n");
@@ -471,20 +480,17 @@ expr *eval(expr * e, env * en)
 		expr *proc = e->listptr;
 		/** delete proc from list **/
 		e->listptr = e->listptr->next;
-		printf("Call proc!\n");
-		printexpr(e);
-		printf("---\n");
+		debug_info("%s", "Call proc!\n");
+		printExprDebug(e);
 		expr *res = proc->proc(e);
 		res->next = 0;
-		printexpr(res);
-		printf("---\n");
+		printExprDebug(res);
 		return res;
 	}
 
 	/* We should never arrive here... */
 	print_err("%s", "Could not evaluate expression: ");
 	printexpr(e);
-	printf("\n");
 	exit(-1);
 }
 
@@ -494,7 +500,7 @@ expr *read(char *s[])
 	char *tptr;
 	for (tptr = *s; *tptr != 0 && *tptr == ' '; tptr++) ;
 	if (*tptr == 0) {
-		fprintf(stderr, "Error. EOF not expected\n");
+		print_err("%s", "EOF not expected\n");
 		exit(-1);
 	}
 	int tokenlen;
@@ -512,7 +518,7 @@ expr *read(char *s[])
 		*s = tptr;
 		return exprlist;
 	} else if (*tptr == ')') {
-		printf("Error ) was not expected here\n");
+		print_err("%s", "')' was not expected here\n");
 		exit(-1);
 		tokenlen = 1;
 	} else {
@@ -520,7 +526,7 @@ expr *read(char *s[])
 		     *tmpptr != 0 && *tmpptr != ' ' && *tmpptr != '('
 		     && *tmpptr != ')'; tokenlen++, tmpptr++) ;
 		if (tokenlen >= MAXTOKENLEN - 1) {
-			printf("Too long token \n");
+			print_err("%s", "Too long token \n");
 			exit(0);
 		}
 		expr *newexpr = malloc(sizeof(expr));
@@ -532,7 +538,6 @@ expr *read(char *s[])
 			strncpy(newexpr->symvalue, tptr, tokenlen);
 			newexpr->symvalue[tokenlen] = 0;
 			newexpr->next = 0;
-			//printf("New TOKEN: '%s'(%d)\n",newexpr->symvalue,tokenlen);
 		}
 		*s = tmpptr;
 		return newexpr;
@@ -570,7 +575,7 @@ expr *math(expr * args, int (*func) (int, int, bool *), int neutral,
 		expr *arg = args->listptr;
 		while (arg != NULL) {
 			if (arg->type != EXPRINT) {
-				printf("Error Math without int\n");
+				print_err("%s", "Error Math without int\n");
 				exit(1);
 			}
 			result = func(result, arg->intvalue, &b);
@@ -681,13 +686,11 @@ bool testInt(char *str, int intvalue, env * en)
 	char *tmp = str;
 	expr *retval = test(str, en);
 	if (retval->type == EXPRINT && retval->intvalue == intvalue) {
-		printf("\n[testInt] Success. %s == %d\n\n", tmp, intvalue);
+		debug_info("Success. %s == %d\n\n", tmp, intvalue);
 		return true;
 	}
-	fprintf(stderr, "[testInt] Error. Test failed for %s : %d. Result: ",
-		tmp, intvalue);
+	print_err("Test failed for %s : %d. Result: ", tmp, intvalue);
 	printexpr(retval);
-	printf("\n");
 	return false;
 }
 
@@ -715,7 +718,7 @@ int runTests()
 	test("(define twice (lambda (x) (* 2 x)))", test_env);
 	testInt("(twice 5)", 10, test_env);
 	test("(define fact (lambda (n) (if (< (+ n -1) 1) 1 (* n (fact (+ n -1))))))", test_env);
-	testInt("(fact 10)", 6, test_env);
+	testInt("(fact 10)", 3628800, test_env);
 	test("(define a 0)", test_env);
 	test("(define f_def (lambda (n) (begin (define a n) a)))", test_env);
 	testInt("(f_def 10)", 10, test_env);
@@ -738,7 +741,7 @@ int main(int argc, char **argv)
 	runTests();
 #endif
 	printf("Interactive Mini-Scheme interpreter:\n");
-	printf("  available forms are: define, lambda, begin and if.\n");
+	printf("  available forms are: define, set!, lambda, begin and if.\n");
 	printf("  available functions are: +, *, <, >\n");
 	while (1) {
 		printf("> ");
@@ -747,9 +750,8 @@ int main(int argc, char **argv)
 		char *newline = strrchr(inputbuf, '\n');
 		if (newline != NULL)
 			*newline = 0;
-		printf("CALL READ with'%s'\n", inputbuf);
+		debug_info("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
 		printexpr(eval(read(&ptr), global_env));
-		printf("\n");
 	}
 }
