@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <limits.h>
 
+#define ERREVAL -
+
 #define print_err(fmt, ...) \
         do { fprintf(stderr, "[%s:%d] Error. " fmt, __func__, \
                         __LINE__, __VA_ARGS__); } while (0)
@@ -234,8 +236,8 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 	/* Add new list head if the dictionary is emtpy. */
 	if (current_dict_entry == NULL) {
 		if (env->outer == NULL && set) {
-			fprintf(stderr, "Error. Variable '%s' not defined.\n",
-				sym->symvalue);
+			print_err("Error. Variable '%s' not defined.\n",
+				  sym->symvalue);
 			return NULL;
 		} else if (set) {
 			return addToEnv(env->outer, sym, value, set);
@@ -264,12 +266,11 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 
 	/* Add new last entry. */
 	if (current_dict_entry->next == NULL) {
-		if (env->outer == NULL && set) {
+		if (env->outer != NULL && set) {
 			return addToEnv(env->outer, sym, value, set);
 		} else if (set) {
-			fprintf(stderr,
-				"Error. Variable '%s' not defined here.\n",
-				sym->symvalue);
+			print_err("Variable '%s' not defined.\n",
+				  sym->symvalue);
 			return NULL;
 		}
 		current_dict_entry->next = malloc(sizeof(dictentry));
@@ -341,42 +342,46 @@ expr *eval(expr * e, env * en)
 		fprintf(stderr, "Error empty list probably ()\n");
 		exit(-1);
 	}
-	if (e->listptr->type != EXPRSYM) {
-		printf("No valid symvalue aft (\n");
-		exit(-1);
-	}
 	/* DEFINE */
-	if (strcmp(e->listptr->symvalue, "define") == 0) {
-		if (getListSize(e) != 3) {
-			printf
-			    ("[eval] Error: Wrong number of arguments for 'define'.\n");
+	if (e->listptr->type == EXPRSYM
+	    && (strcmp(e->listptr->symvalue, "define") == 0
+		|| strcmp(e->listptr->symvalue, "set!") == 0)) {
+		int size = getListSize(e);
+		if (size != 3) {
+			print_err
+			    ("Wrong number of arguments for 'define'/'set!': %d\n",
+			     size);
 			exit(-1);
 		}
 		expr *key = getNext(e, 1);
 		expr *value = getNext(e, 2);
 		if (key->type != EXPRSYM) {
-			printf
-			    ("[eval] Error: Argument 1 for 'define' is not a symbol.\n");
+			print_err
+			    ("%s",
+			     "Argument 1 for 'define'/'set!' is not a symbol.\n");
 			exit(-1);
 		}
 		value = eval(value, en);
-		if (addToEnv(en, key, value, false) == NULL) {
-			printf("[eval] Error: Could not define %s.\n",
-			       key->symvalue);
+		if (addToEnv
+		    (en, key, value,
+		     strcmp(e->listptr->symvalue, "set!") == 0) == NULL) {
+			print_err("Could not define/set %s.\n", key->symvalue);
 			exit(-1);
 		}
 		printf("[eval] Defined value %s.\n", key->symvalue);
 		return 0;
 	}
 	/* QUOTE */
-	if (strcmp(e->listptr->symvalue, "quote") == 0) {
+	if (e->listptr->type == EXPRSYM
+	    && strcmp(e->listptr->symvalue, "quote") == 0) {
 		expr *next = e->listptr->next;
 		free(e->listptr);
 		e->listptr = next;
 		return e;
 	}
 	/* IF */
-	if (strcmp(e->listptr->symvalue, "if") == 0) {
+	if (e->listptr->type == EXPRSYM
+	    && strcmp(e->listptr->symvalue, "if") == 0) {
 		if (getListSize(e) != 4) {
 			printf
 			    ("[eval] Error. Wrong number of arguments for 'if'.\n");
@@ -401,11 +406,14 @@ expr *eval(expr * e, env * en)
 		}
 
 	}
-	if (strcmp(e->listptr->symvalue, "begin") == 0) {
+	if (e->listptr->type == EXPRSYM
+	    && strcmp(e->listptr->symvalue, "begin") == 0) {
 		e->listptr = e->listptr->next;
 		return evalList(e, en);
 	}
-	if (strcmp(e->listptr->symvalue, "lambda") == 0) {
+	/* LAMBDA */
+	if (e->listptr->type == EXPRSYM
+	    && strcmp(e->listptr->symvalue, "lambda") == 0) {
 		expr *args = getNext(e, 1);
 		if (args->type != EXPRLIST) {
 			printf
@@ -447,14 +455,16 @@ expr *eval(expr * e, env * en)
 		debug_info("%s", "[eval] Evaluate Lambd Expr\n");
 		expr *res = 0;
 		printexpr(e->listptr->lambdaexpr);
-		if (e->listptr->lambdaexpr->type == EXPRLIST) {
+		expr *lambda_new = deepCopy(e->listptr->lambdaexpr);
+		if (lambda_new->type == EXPRLIST) {
 			debug_info("%s", " as list\n");
-			res = evalList(e->listptr->lambdaexpr, newenv);
+			res = evalList(lambda_new, newenv);
 		} else {
 			debug_info("%s", "as single expr\n");
-			expr *res = eval(e->listptr->lambdaexpr, newenv);
+			expr *res = eval(lambda_new, newenv);
 		}
 		free(newenv);
+		/* TODO: free lambda_new */
 		return res;
 	}
 	if (e->listptr->type == EXPRPROC) {
@@ -589,6 +599,12 @@ int addInt(int a, int b, bool * c)
 	return a + b;
 }
 
+/* a - b */
+int subInt(int a, int b, bool * c)
+{
+	return a - b;
+}
+
 /* a * b */
 int mulInt(int a, int b, bool * c)
 {
@@ -614,6 +630,11 @@ int greaterInt(int a, int b, bool * c)
 expr *add(expr * args)
 {
 	math(args, addInt, 0, false);
+}
+
+expr *sub(expr * args)
+{
+	math(args, subInt, 0, false);
 }
 
 expr *mul(expr * args)
@@ -643,6 +664,7 @@ void initGlobal(env * en)
 	addToEnv(en, createExprSym(TRUE), createExprSym(TRUE), false);
 	addToEnv(en, createExprSym(FALSE), createExprSym(FALSE), false);
 	addToEnv(en, createExprSym("+"), createExprProc(add), false);
+	addToEnv(en, createExprSym("-"), createExprProc(sub), false);
 	addToEnv(en, createExprSym("*"), createExprProc(mul), false);
 	addToEnv(en, createExprSym("<"), createExprProc(less), false);
 	addToEnv(en, createExprSym(">"), createExprProc(greater), false);
@@ -659,7 +681,7 @@ bool testInt(char *str, int intvalue, env * en)
 	char *tmp = str;
 	expr *retval = test(str, en);
 	if (retval->type == EXPRINT && retval->intvalue == intvalue) {
-		printf("[testInt] Success. %s == %d\n", tmp, intvalue);
+		printf("\n[testInt] Success. %s == %d\n\n", tmp, intvalue);
 		return true;
 	}
 	fprintf(stderr, "[testInt] Error. Test failed for %s : %d. Result: ",
@@ -689,17 +711,18 @@ int runTests()
 	test("(define x 3)", test_env);
 	testInt("x", 3, test_env);
 	testInt("(+ x x)", 6, test_env);
-
-	char *test = "(+ 1 2 3 4 5 (+ 1 2))";
-	expr *copyme = read(&test);
-	expr *new = deepCopy(copyme);
-
-	printf("copyme: %p, new: %p\n", copyme, new);
-	printexpr(copyme);
-	printf("\n");
-
-	printexpr(new);
-	printf("\n");
+	testInt("((lambda (x) (+ x x)) 5)", 10, test_env);
+	test("(define twice (lambda (x) (* 2 x)))", test_env);
+	testInt("(twice 5)", 10, test_env);
+	test("(define fact (lambda (n) (if (< (+ n -1) 1) 1 (* n (fact (+ n -1))))))", test_env);
+	testInt("(fact 10)", 6, test_env);
+	test("(define a 0)", test_env);
+	test("(define f_def (lambda (n) (begin (define a n) a)))", test_env);
+	testInt("(f_def 10)", 10, test_env);
+	testInt("a", 0, test_env);
+	test("(define f_set (lambda (n) (begin (set! a n) a)))", test_env);
+	testInt("(f_set 12)", 12, test_env);
+	testInt("a", 12, test_env);
 
 	free(test_env);
 }
@@ -715,6 +738,8 @@ int main(int argc, char **argv)
 	runTests();
 #endif
 	printf("Interactive Mini-Scheme interpreter:\n");
+	printf("  available forms are: define, lambda, begin and if.\n");
+	printf("  available functions are: +, *, <, >\n");
 	while (1) {
 		printf("> ");
 		fflush(stdout);
