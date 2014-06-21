@@ -2,14 +2,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <limits.h>
+
+#define print_err(fmt, ...) \
+        do { fprintf(stderr, "[%s:%d] Error. " fmt, __func__, \
+                        __LINE__, __VA_ARGS__); } while (0)
 
 #define debug_info(fmt, ...) \
-        do { if (DEBUG) fprintf(stdout, "%s:%d:%s(): " fmt, __FILE__, \
-                        __LINE__, __func__, __VA_ARGS__); } while (0)
+        do { if (DEBUG) fprintf(stdout, "[%s:%d] " fmt, __func__, \
+                        __LINE__, __VA_ARGS__); } while (0)
 
 #define debug_err(fmt, ...) \
-        do { if (DEBUG) fprintf(stderr, "%s:%d:%s(): " fmt, __FILE__, \
-                        __LINE__, __func__, __VA_ARGS__); } while (0)
+        do { if (DEBUG) fprintf(stderr, "[%s:%d] " fmt, __func__, \
+                        __LINE__, __VA_ARGS__); } while (0)
 
 #define MAXTOKENLEN 32
 
@@ -38,6 +43,38 @@ typedef struct env {
 	dictentry *list;
 	struct env *outer;
 } env;
+
+expr *deepCopy(expr * e)
+{
+	if (e == NULL)
+		return NULL;
+	expr *newexpr = malloc(sizeof(expr));
+
+	if (e->type != EXPRLIST) {
+		memcpy(newexpr, e, sizeof(expr));
+		return newexpr;
+	}
+
+	newexpr->type = EXPRLIST;
+
+	expr *te = e->listptr;
+	expr *prev = NULL;
+	while (te != NULL) {
+		expr *savednext = te->next;
+		te = deepCopy(te);
+		if (prev == NULL) {
+			newexpr->listptr = te;
+		} else {
+			prev->next = te;
+			te->next = 0;
+		}
+		prev = te;
+		te->next = savednext;
+		te = savednext;
+	}
+
+	return newexpr;
+}
 
 expr *findInDict(expr * e, env * en)
 {
@@ -306,7 +343,7 @@ expr *eval(expr * e, env * en)
 	if (strcmp(e->listptr->symvalue, "define") == 0) {
 		if (getListSize(e) != 3) {
 			printf
-			    ("[eval] Error: Too few arguments for 'define'.\n");
+			    ("[eval] Error: Wrong number of arguments for 'define'.\n");
 			exit(-1);
 		}
 		expr *key = getNext(e, 1);
@@ -316,7 +353,7 @@ expr *eval(expr * e, env * en)
 			    ("[eval] Error: Argument 1 for 'define' is not a symbol.\n");
 			exit(-1);
 		}
-		key->next = eval(value, en);
+		value = eval(value, en);
 		if (addToEnv(en, key, value, false) == NULL) {
 			printf("[eval] Error: Could not define %s.\n",
 			       key->symvalue);
@@ -335,7 +372,8 @@ expr *eval(expr * e, env * en)
 	/* IF */
 	if (strcmp(e->listptr->symvalue, "if") == 0) {
 		if (getListSize(e) != 4) {
-			printf("[eval] Error. Too few arguments for 'if'.\n");
+			printf
+			    ("[eval] Error. Wrong number of arguments for 'if'.\n");
 			exit(-1);
 		}
 		expr *cond = eval(getNext(e, 1), en);
@@ -377,7 +415,7 @@ expr *eval(expr * e, env * en)
 	}
 
 	/* We should never arrive here... */
-	printf("[eval] Error: Could not evaluate expression: ");
+	print_err("%s", "Could not evaluate expression: ");
 	printexpr(e);
 	printf("\n");
 	exit(-1);
@@ -442,6 +480,8 @@ expr *read(char *s[])
  *   args : a pointer to an expr struct.
  *          This must be an integer expr or a list of integer exprs.
  *   func : a function pointer to an arithmetic function, e.g. add().
+ *   neutral : the neutral element for the arithmeitc operation.
+ *             E.g. 0 for add and 1 for mulitplication.
  *   as_bool : true if the resulting expression should be a boolean
  *             symbol expression instead of an integer expression.
  *             If the return value of func is 0, then the bool value
@@ -506,6 +546,7 @@ int lessInt(int a, int b, bool * c)
 	return b;
 }
 
+/* a > b */
 int greaterInt(int a, int b, bool * c)
 {
 	if (a <= b)
@@ -525,12 +566,12 @@ expr *mul(expr * args)
 
 expr *less(expr * args)
 {
-	math(args, lessInt, 0, true);
+	math(args, lessInt, INT_MIN, true);
 }
 
 expr *greater(expr * args)
 {
-	math(args, greaterInt, 0, true);
+	math(args, greaterInt, INT_MAX, true);
 }
 
 /*
@@ -588,6 +629,20 @@ int runTests()
 	testInt("(+ (* 2 100) (* 1 10))", 210, test_env);
 	testInt("(if (> 6 5) (+ 1 1) (+ 2 2))", 2, test_env);
 	testInt("(if (< 6 5) (+ 1 1) (+ 2 2))", 4, test_env);
+	test("(define x 3)", test_env);
+	testInt("x", 3, test_env);
+	testInt("(+ x x)", 6, test_env);
+
+	char *test = "(+ 1 2 3 4 5 (+ 1 2))";
+	expr *copyme = read(&test);
+	expr *new = deepCopy(copyme);
+
+	printf("copyme: %p, new: %p\n", copyme, new);
+	printexpr(copyme);
+	printf("\n");
+
+	printexpr(new);
+	printf("\n");
 
 	free(test_env);
 }
