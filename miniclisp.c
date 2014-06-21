@@ -3,6 +3,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+#define debug_info(fmt, ...) \
+        do { if (DEBUG) fprintf(stdout, "%s:%d:%s(): " fmt, __FILE__, \
+                        __LINE__, __func__, __VA_ARGS__); } while (0)
+
+#define debug_err(fmt, ...) \
+        do { if (DEBUG) fprintf(stderr, "%s:%d:%s(): " fmt, __FILE__, \
+                        __LINE__, __func__, __VA_ARGS__); } while (0)
+
 #define MAXTOKENLEN 32
 
 const char *TRUE = "#t";
@@ -78,12 +86,13 @@ expr *getNext(expr * e, int i)
 int getListSize(expr * e)
 {
 	if (e == NULL) {
-		printf("[getListSize] Error: argument e is NULL.\n");
+		fprintf(stderr, "[getListSize] Error: argument e is NULL.\n");
 		return -1;
 	}
 	if (e->type != EXPRLIST) {
-		printf
-		    ("[getListSize] Error: argument e is not an expression list.\n");
+		fprintf
+		    (stderr,
+		     "[getListSize] Error: argument e is not an expression list.\n");
 		return -1;
 	}
 	int counter = 0;
@@ -153,6 +162,15 @@ expr *createExprSym(const char *s)
 	return newexpr;
 }
 
+expr *createExprInt(int i)
+{
+	expr *newexpr = malloc(sizeof(expr));
+	newexpr->type = EXPRINT;
+	newexpr->next = NULL;
+	newexpr->intvalue = i;
+	return newexpr;
+}
+
 /*
  * Add a key-value pair to an environment.
  * Params:
@@ -173,8 +191,8 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 	/* Add new list head if the dictionary is emtpy. */
 	if (current_dict_entry == NULL) {
 		if (env->outer == NULL && set) {
-			printf("Error. Variable %s not defined.\n",
-			       sym->symvalue);
+			fprintf(stderr, "Error. Variable '%s' not defined.\n",
+				sym->symvalue);
 			return NULL;
 		} else if (set) {
 			return addToEnv(env->outer, sym, value, set);
@@ -206,8 +224,9 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 		if (env->outer == NULL && set) {
 			return addToEnv(env->outer, sym, value, set);
 		} else if (set) {
-			printf("Error. Variable %s not defined here.\n",
-			       sym->symvalue);
+			fprintf(stderr,
+				"Error. Variable '%s' not defined here.\n",
+				sym->symvalue);
 			return NULL;
 		}
 		current_dict_entry->next = malloc(sizeof(dictentry));
@@ -225,15 +244,16 @@ env *global_env;
 
 expr *eval(expr * e, env * en)
 {
-	printf("Eval called with");
+	debug_info("%s", "eval called with");
 	printexpr(e);
 	printf("\n");
+
 	if (e->type == EXPRSYM) {
-		printf("SYM\n");
 		expr *res = findInDict(e, en);
 		if (res == NULL) {
-			printf("[eval] Error: Variable not defined here: %s.\n",
-			       e->symvalue);
+			fprintf(stderr,
+				"Error: Variable not defined here: %s.\n",
+				e->symvalue);
 			exit(-1);
 		}
 		return res;
@@ -242,7 +262,7 @@ expr *eval(expr * e, env * en)
 		return e;
 	}
 	if (e->listptr == NULL) {
-		printf("Error empty list probably ()\n");
+		fprintf(stderr, "Error empty list probably ()\n");
 		exit(-1);
 	}
 	if (e->listptr->type != EXPRSYM) {
@@ -337,11 +357,11 @@ expr *eval(expr * e, env * en)
 
 expr *read(char *s[])
 {
-	printf("Read called with %s\n", *s);
+	debug_info("Read called with %s\n", *s);
 	char *tptr;
 	for (tptr = *s; *tptr != 0 && *tptr == ' '; tptr++) ;
 	if (*tptr == 0) {
-		printf("Error EOF not expected\n");
+		fprintf(stderr, "Error. EOF not expected\n");
 		exit(-1);
 	}
 	int tokenlen;
@@ -388,55 +408,108 @@ expr *read(char *s[])
 
 /**        LAMBDA PREDEFINED FUNCTIONS: **/
 
-expr *math(expr * args, int neutral, int (*func) (int, int))
+/*
+ * Apply a general integer arithmetic function on an expression list.
+ * Params:
+ *   args : a pointer to an expr struct.
+ *          This must be an integer expr or a list of integer exprs.
+ *   func : a function pointer to an arithmetic function, e.g. add().
+ *   as_bool : true if the resulting expression should be a boolean
+ *             symbol expression instead of an integer expression.
+ *             If the return value of func is 0, then the bool value
+ *             is set to FALSE. Othewise it's TRUE.
+ * Returns:
+ *   a pointer to an expression struct which equals the evaluation of
+ *   the given integer expressions according to func.
+ *   Returns NULL if the given expression pointer (args) is not an
+ *   EXPRINT or an EXPRLIST of EXPRINTs.
+ */
+expr *math(expr * args, int (*func) (int, int, bool *), int neutral,
+	   bool as_bool)
 {
 	if (args->type == EXPRINT)
 		return args;
 	else if (args->type == EXPRLIST) {
-		int res = neutral;
+		int result = neutral;
+		bool b = true;
 		expr *arg = args->listptr;
 		while (arg != NULL) {
 			if (arg->type != EXPRINT) {
 				printf("Error Math without int\n");
 				exit(1);
 			}
-			res = func(res, arg->intvalue);
+			result = func(result, arg->intvalue, &b);
 			arg = arg->next;
 		}
-		expr *newexpr = malloc(sizeof(expr));
-		newexpr->type = EXPRINT;
-		newexpr->intvalue = res;
+
+		expr *newexpr;
+
+		if (as_bool) {
+			if (!b)
+				newexpr = createExprSym(FALSE);
+			else
+				newexpr = createExprSym(TRUE);
+		} else {
+			newexpr = createExprInt(result);
+		}
+
 		return newexpr;
 	}
 	return NULL;		//What to do??
 }
 
-int addInt(int a, int b)
+/* a + b */
+int addInt(int a, int b, bool * c)
 {
 	return a + b;
 }
 
+/* a * b */
+int mulInt(int a, int b, bool * c)
+{
+	return a * b;
+}
+
+/* a < b */
+int lessInt(int a, int b, bool * c)
+{
+	if (!(a < b))
+		*c = false;
+	return b;
+}
+
+int greaterInt(int a, int b, bool * c)
+{
+	if (a <= b)
+		*c = false;
+	return b;
+}
+
 expr *add(expr * args)
 {
-	math(args, 0, addInt);
+	math(args, addInt, 0, false);
 }
 
-bool testInt(char *str, int intvalue, env * en)
+expr *mul(expr * args)
 {
-
-	char *tmp = str;
-	expr *retval = eval(read(&str), en);
-	if (retval->type == EXPRINT && retval->intvalue == intvalue) {
-		printf("[testInt] Success. %s == %d\n", tmp, intvalue);
-		return true;
-	}
-	printf("[testInt] Error. Test failed for %s : %d. Result: ", tmp,
-	       intvalue);
-	printexpr(retval);
-	printf("\n");
-	return false;
+	math(args, mulInt, 1, false);
 }
 
+expr *less(expr * args)
+{
+	math(args, lessInt, 0, true);
+}
+
+expr *greater(expr * args)
+{
+	math(args, greaterInt, 0, true);
+}
+
+/*
+ * Inititalizes an environment with global values.
+ * Params:
+ *   en : the environment which should be initialized.
+ */
 void initGlobal(env * en)
 {
 	en->outer = 0;
@@ -444,8 +517,38 @@ void initGlobal(env * en)
 	addToEnv(en, createExprSym(TRUE), createExprSym(TRUE), false);
 	addToEnv(en, createExprSym(FALSE), createExprSym(FALSE), false);
 	addToEnv(en, createExprSym("+"), createExprProc(add), false);
+	addToEnv(en, createExprSym("*"), createExprProc(mul), false);
+	addToEnv(en, createExprSym("<"), createExprProc(less), false);
+	addToEnv(en, createExprSym(">"), createExprProc(greater), false);
 }
 
+expr *test(char *str, env * en)
+{
+	return eval(read(&str), en);
+}
+
+bool testInt(char *str, int intvalue, env * en)
+{
+
+	char *tmp = str;
+	expr *retval = test(str, en);
+	if (retval->type == EXPRINT && retval->intvalue == intvalue) {
+		printf("[testInt] Success. %s == %d\n", tmp, intvalue);
+		return true;
+	}
+	fprintf(stderr, "[testInt] Error. Test failed for %s : %d. Result: ",
+		tmp, intvalue);
+	printexpr(retval);
+	printf("\n");
+	return false;
+}
+
+/*
+ * Run some tests...
+ * A nice collection of basic scheme test can be found on:
+ *   http://norvig.com/lispytest.py
+ * TODO: Remove all of those exit(-1) so we can test several wrong inputs.
+ */
 int runTests()
 {
 	env *test_env = malloc(sizeof(env));
@@ -453,21 +556,24 @@ int runTests()
 
 	printf("Running tests...\n");
 
-	testInt("(+ 1337 42)", 1379, test_env);
-	testInt("0", 1, test_env);
+	testInt("(+ 2 2)", 4, test_env);
+	testInt("(+ (* 2 100) (* 1 10))", 210, test_env);
+	testInt("(if (> 6 5) (+ 1 1) (+ 2 2))", 2, test_env);
+	testInt("(if (< 6 5) (+ 1 1) (+ 2 2))", 4, test_env);
 
 	free(test_env);
 }
 
 #define MAXINPUT 512
+
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
 	global_env = malloc(sizeof(env));
 	initGlobal(global_env);
-
+#ifdef DEBUG
 	runTests();
-
+#endif
 	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
 		printf("> ");
