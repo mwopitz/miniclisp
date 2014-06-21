@@ -8,7 +8,7 @@
 const char *TRUE = "#t";
 const char *FALSE = "#f";
 
-enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPPROC };
+enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC };
 typedef struct expr {
 	enum exprtype type;
 	long int intvalue;
@@ -99,6 +99,15 @@ void addToExprlist(expr * list, expr * new)
 		}
 		t->next = new;
 	}
+}
+
+expr *createExprProc(struct expr *(*proc) (struct expr *))
+{
+	expr *newexpr = malloc(sizeof(expr));
+	newexpr->type = EXPRPROC;
+	newexpr->next = NULL;
+	newexpr->proc = proc;
+	return newexpr;
 }
 
 expr *createExprSym(const char *s)
@@ -209,9 +218,8 @@ expr *eval(expr * e, env * en)
 		return e;
 	}
 	if (strcmp(e->listptr->symvalue, "if") == 0) {
-		if (e->listptr->next == 0 || e->listptr->next->next == 0
-		    || e->listptr->next->next->next == 0) {
-			printf("not enough arguments for if\n");
+		if (getNext(e, 3) == NULL || getNext(e, 4) != NULL) {
+			printf("not right number of arguments for if\n");
 			exit(-1);
 		}
 		expr *cond = eval(e->listptr->next, en);
@@ -233,6 +241,30 @@ expr *eval(expr * e, env * en)
 		}
 
 	}
+	expr *te = e->listptr;
+	expr *procexpr = e->listptr;
+	/* first element is the proc skip this and evaluate the shorter list */
+	e->listptr = 0;
+	while (te != 0 && te->next != 0) {
+		expr *savednext = te->next->next;
+		te->next = eval(te->next, en);
+		te->next->next = savednext;
+		te = te->next;
+		if (e->listptr == 0)
+			e->listptr = te;
+	}
+	procexpr = eval(procexpr, en);
+	if (procexpr->type == EXPRPROC) {
+		printf("Call proc!\n");
+		printexpr(e);
+		printf("---\n");
+		expr *res = procexpr->proc(e);
+		res->next = 0;
+		printexpr(res);
+		printf("---\n");
+		return res;
+	}
+
 	return e;
 }
 
@@ -296,13 +328,14 @@ expr *math(expr * args, int neutral, int (*func) (int, int))
 	else if (args->type == EXPRLIST) {
 		int res = neutral;
 		expr *arg = args->listptr;
-		while (arg != NULL)
+		while (arg != NULL) {
 			if (arg->type != EXPRINT) {
 				printf("Error Math without int\n");
 				exit(1);
 			}
-		res = func(res, arg->intvalue);
-		arg = arg->next;
+			res = func(res, arg->intvalue);
+			arg = arg->next;
+		}
 		expr *newexpr = malloc(sizeof(expr));
 		newexpr->type = EXPRINT;
 		newexpr->intvalue = res;
@@ -330,6 +363,7 @@ int main(int argc, char **argv)
 	global_env->list = 0;
 	addToEnv(global_env, createExprSym(TRUE), createExprSym(TRUE), true);
 	addToEnv(global_env, createExprSym(FALSE), createExprSym(FALSE), true);
+	addToEnv(global_env, createExprSym("+"), createExprProc(add), true);
 	printf("Interactive Mini-Scheme interpreter:\n");
 	while (1) {
 		printf("> ");
