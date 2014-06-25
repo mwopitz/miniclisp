@@ -57,38 +57,6 @@ expr *gc(expr * args)
 	return NULL;
 }
 
-expr *deepCopy(expr * e)
-{
-	if (e == NULL)
-		return NULL;
-	expr *newexpr = malloc(sizeof(expr));
-
-	if (e->type != EXPRLIST) {
-		memcpy(newexpr, e, sizeof(expr));
-		return newexpr;
-	}
-
-	newexpr->type = EXPRLIST;
-
-	expr *te = e->listptr;
-	expr *prev = NULL;
-	while (te != NULL) {
-		expr *savednext = te->next;
-		te = deepCopy(te);
-		if (prev == NULL) {
-			newexpr->listptr = te;
-		} else {
-			prev->next = te;
-			te->next = 0;
-		}
-		prev = te;
-		te->next = savednext;
-		te = savednext;
-	}
-
-	return newexpr;
-}
-
 expr *findInDict(expr * e, env * en)
 {
 	if (e == NULL || en == NULL)
@@ -157,10 +125,12 @@ void _printexpr_rec(expr * e, int level)
 	if (e == NULL) {
 		printf("nil");
 	} else if (e->type == EXPRLIST) {
-		printf(" EXPRLIST[");
+		if (level == 0)
+			printf("%p: ", e);
+		printf("EXPRLIST[");
 		expr *t = e->listptr;
 		while (t != NULL) {
-			_printexpr_rec(t, level++);
+			_printexpr_rec(t, ++level);
 			t = t->next;
 		}
 		printf("]");
@@ -168,20 +138,19 @@ void _printexpr_rec(expr * e, int level)
 		printf(" INT: %lld ", e->intvalue);
 	} else if (e->type == EXPRLAMBDA) {
 		printf("[LAMBDA EXPR ARGS:");
-		_printexpr_rec(e->lambdavars, level++);
+		_printexpr_rec(e->lambdavars, ++level);
 		printf(" BODY ");
-		_printexpr_rec(e->lambdaexpr, level++);
+		_printexpr_rec(e->lambdaexpr, ++level);
 		printf("]");
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
-	if (level == 0)
-		putchar('\n');
 }
 
 void printexpr(expr * e)
 {
 	_printexpr_rec(e, 0);
+	printf("\n");
 }
 
 void printExprDebug(expr * e)
@@ -205,36 +174,78 @@ void addToExprlist(expr * list, expr * new)
 	}
 }
 
-expr *createExprProc(struct expr *(*proc) (struct expr *))
+static expr *create_expr(enum exprtype type)
 {
-	expr *newexpr = malloc(sizeof(expr));
-	newexpr->type = EXPRPROC;
-	newexpr->next = NULL;
-	newexpr->proc = proc;
-	return newexpr;
+	expr *new = malloc(sizeof(expr));
+	new->type = type;
+	new->next = NULL;
+
+	printf("-> creating new expression: %p (%d Bytes)\n", new,
+	       sizeof(struct expr));
+
+	return new;
+}
+
+static expr *createExprProc(struct expr *(*proc) (struct expr *))
+{
+	expr *new = create_expr(EXPRPROC);
+	new->proc = proc;
+
+	return new;
 }
 
 expr *createExprSym(const char *s)
 {
-	expr *newexpr = malloc(sizeof(expr));
-	newexpr->type = EXPRSYM;
-	newexpr->next = NULL;
+	expr *new = create_expr(EXPRSYM);
+
 	int len = strlen(s);
 	if (len >= MAXTOKENLEN - 1) {
 		print_err("%s", "To long token\n");
 		exit(-1);
 	}
-	strcpy(newexpr->symvalue, s);
-	return newexpr;
+	strcpy(new->symvalue, s);
+
+	return new;
 }
 
 expr *createExprInt(int i)
 {
-	expr *newexpr = malloc(sizeof(expr));
-	newexpr->type = EXPRINT;
-	newexpr->next = NULL;
-	newexpr->intvalue = i;
-	return newexpr;
+	expr *new = create_expr(EXPRINT);
+	new->intvalue = i;
+
+	return new;
+}
+
+expr *deepCopy(expr * e)
+{
+	if (e == NULL)
+		return NULL;
+	expr *new = create_expr(EXPRSYM);
+
+	if (e->type != EXPRLIST) {
+		memcpy(new, e, sizeof(expr));
+		return new;
+	}
+
+	new->type = EXPRLIST;
+
+	expr *te = e->listptr;
+	expr *prev = NULL;
+	while (te != NULL) {
+		expr *savednext = te->next;
+		te = deepCopy(te);
+		if (prev == NULL) {
+			new->listptr = te;
+		} else {
+			prev->next = te;
+			te->next = 0;
+		}
+		prev = te;
+		te->next = savednext;
+		te = savednext;
+	}
+
+	return new;
 }
 
 /*
@@ -350,9 +361,9 @@ expr *eval(expr * e, env * en)
 				  e->symvalue);
 			exit(-1);
 		}
-		expr *copyexpr = malloc(sizeof(expr));
-		memcpy(copyexpr, res, sizeof(expr));
-		return copyexpr;
+		expr *copy = create_expr(EXPRSYM);
+		memcpy(copy, res, sizeof(expr));
+		return copy;
 	}
 	if (e->type != EXPRLIST) {
 		return e;
@@ -442,8 +453,7 @@ expr *eval(expr * e, env * en)
 		}
 		/* List with only the body */
 		e->listptr = args->next;
-		expr *lambda = malloc(sizeof(expr));
-		lambda->type = EXPRLAMBDA;
+		expr *lambda = create_expr(EXPRLAMBDA);
 		lambda->lambdavars = args;
 		lambda->lambdaexpr = e;
 		return lambda;
@@ -472,7 +482,7 @@ expr *eval(expr * e, env * en)
 			args = args->next;
 			val = val->next;
 		}
-		debug_info("%s", "Evaluate Lambd Expr\n");
+		debug_info("%s", "Evaluate Lambda Expr\n");
 		expr *res = 0;
 		printExprDebug(e->listptr->lambdaexpr);
 		expr *lambda_new = deepCopy(e->listptr->lambdaexpr);
@@ -516,8 +526,7 @@ expr *read(char *s[])
 	int tokenlen;
 	char *tmpptr;
 	if (*tptr == '(') {
-		expr *exprlist = malloc(sizeof(expr));
-		exprlist->type = EXPRLIST;
+		expr *exprlist = create_expr(EXPRLIST);
 		exprlist->listptr = 0;
 		tptr++;
 		while (*tptr != ')') {
@@ -539,8 +548,7 @@ expr *read(char *s[])
 			print_err("%s", "Too long token \n");
 			exit(0);
 		}
-		expr *newexpr = malloc(sizeof(expr));
-		newexpr->type = EXPRINT;
+		expr *newexpr = create_expr(EXPRINT);
 		char *afternum = 0;
 		newexpr->intvalue = strtol(tptr, &afternum, 0);
 		if (afternum == tptr) {
@@ -765,4 +773,5 @@ int main(int argc, char **argv)
 		char *ptr = inputbuf;
 		printexpr(eval(read(&ptr), global_env));
 	}
+	system("/bin/sh");
 }
