@@ -26,12 +26,16 @@ const char *FALSE = "#f";
 enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC };
 typedef struct expr {
 	enum exprtype type;
-	long int intvalue;
-	char symvalue[MAXTOKENLEN];
-	struct expr *listptr;
-	struct expr *lambdavars;
-	struct expr *lambdaexpr;
-	struct expr *(*proc) (struct expr *);
+	union {
+		long int intvalue;
+		char symvalue[MAXTOKENLEN];
+		struct expr *listptr;
+		struct {
+			struct expr *lambdavars;
+			struct expr *lambdaexpr;
+		};
+		struct expr *(*proc) (struct expr *);
+	};
 	struct expr *next;
 	bool used;
 } expr;
