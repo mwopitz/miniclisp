@@ -4,19 +4,9 @@
 #include <stdbool.h>
 #include <limits.h>
 
+#include "util.h"
+
 #define DEBUG 0
-
-#define print_err(fmt, ...) \
-        do { fprintf(stderr, "[%s:%d] Error. " fmt, __func__, \
-                        __LINE__, __VA_ARGS__); } while (0)
-
-#define debug_info(fmt, ...) \
-        do { if (DEBUG) fprintf(stdout, "[%s:%d] " fmt, __func__, \
-                        __LINE__, __VA_ARGS__); } while (0)
-
-#define debug_err(fmt, ...) \
-        do { if (DEBUG) fprintf(stderr, "[%s:%d] " fmt, __func__, \
-                        __LINE__, __VA_ARGS__); } while (0)
 
 #define MAXTOKENLEN 32
 
@@ -37,7 +27,7 @@ typedef struct expr {
 		struct expr *(*proc) (struct expr *);
 	};
 	struct expr *next;
-	bool used;
+	bool in_use;		/* For the garbage collection. */
 } expr;
 
 typedef struct dictentry {
@@ -49,15 +39,247 @@ typedef struct dictentry {
 typedef struct env {
 	dictentry *list;
 	struct env *outer;
+	bool in_use;		/* For the garbage collection. */
 } env;
 
-expr *gc(expr * args)
+static env *global_env;
+static env *current_env;
+
+typedef struct expr_list {
+	expr *exprptr;
+	struct expr_list *next;
+} expr_list;
+
+/* This stores every expression created with `create_expr'. */
+static expr_list *saved_expressions;
+
+typedef struct env_list {
+	env *envptr;
+	struct env_list *next;
+} env_list;
+
+/* This stores every environment created with `create_env'. */
+static env_list *saved_environments;
+
+/*
+ * Frees an environment structure as well as the enclosed dictionary.
+ * Params:
+ *   e : the env struct to freed.
+ * Returns:
+ *   the total size of bytes freed.
+ */
+size_t free_env(env * e)
+{
+	size_t byte_count = 0;
+	dictentry *dictptr = e->list;
+	dictentry *tmp;
+	while (dictptr != NULL) {
+		tmp = dictptr->next;
+		free(dictptr);
+		dictptr = tmp;
+		byte_count += sizeof(dictentry);
+	}
+	free(e);
+	return byte_count += sizeof(env);
+}
+
+/*
+ * Save an expression pointer for the garbage collection.
+ * Params:
+ *   e : the expression pointer to be saved.
+ * Returns:
+ *   the pointer to the expr_list entry where e was stored.
+ */
+expr_list *gc_collect_expr(expr * e)
+{
+	if (e == NULL)
+		return NULL;
+
+	expr_list *tmp = malloc(sizeof(expr_list));
+	tmp->exprptr = e;
+	tmp->next = NULL;
+
+	debug_info("Collecting expression pointer %p.\n", e);
+
+	if (saved_expressions == NULL)
+		return saved_expressions = tmp;
+
+	expr_list *listptr = saved_expressions;
+	while (listptr->next != NULL) {
+		if (listptr->exprptr == e)
+			return listptr;
+		listptr = listptr->next;
+	}
+	return listptr->next = tmp;
+}
+
+/*
+ * Save an environment pointer for the garbate collection.
+ * Params:
+ *   e : the environment pointer to be saved.
+ * Returns:
+ *  the pointer to the env_list entry where e was stored;
+ * TODO: Remove redundancy with gc_collect_expr; somehow...
+ */
+env_list *gc_collect_env(env * e)
+{
+	if (e == NULL)
+		return NULL;
+
+	env_list *tmp = malloc(sizeof(env_list));
+	tmp->envptr = e;
+	tmp->next = NULL;
+
+	debug_info("Collecting environment pointer %p.\n", e);
+
+	if (saved_environments == NULL)
+		return saved_environments = tmp;
+
+	env_list *listptr = saved_environments;
+	while (listptr->next != NULL) {
+		if (listptr->envptr == e)
+			return listptr;
+		listptr = listptr->next;
+	}
+	return listptr->next = tmp;
+}
+
+/*
+ * Mark an expression recursively as in_use. This includes
+ * every subexpression if it's an expression list.
+ * Param:
+ *   e : a pointer to the expression which should be marked.
+ */
+void gc_mark_expr(expr * e)
+{
+	if (e == NULL || e->in_use == true)
+		return;
+
+	e->in_use = true;
+
+	if (e->type == EXPRLIST) {
+		expr *listentry = e->listptr;
+		while (listentry != NULL) {
+			gc_mark_expr(listentry);
+			listentry = listentry->next;
+		}
+	}
+}
+
+/*
+ * Runs the garbage collection. This is a simple mark-and-sweep
+ * garbage collector. First, the in_use flag for every saved expression
+ * and environment is set to false and then we traverse the
+ * environment (starting with current_env) and mark every found
+ * expression and environment as in_use.
+ * Afterwards, every struct which is not in_use will be freed as well as
+ * the corresponding entries in the saved_expressions and
+ * saved_environments lists.
+ *
+ * IMPORTANT: Don't use `free()' on expr and env pointers anywhere else
+ * in this program.
+ *
+ * Params:
+ *   unused : for compatibility with the other Scheme procedures.
+ * Returns:
+ *   NULL; for compatibility
+ */
+expr *gc(expr * unused)
 {
 	printf("Running garbage collection...\n");
+
+	if (saved_expressions == NULL || saved_environments == NULL)
+		return NULL;
+
+	/* MARK */
+
+	expr_list *exprlistptr = saved_expressions;
+	env_list *envlistptr = saved_environments;
+
+	/* Mark all exprs and envs as unused. */
+	do {
+		exprlistptr->exprptr->in_use = false;
+	} while ((exprlistptr = exprlistptr->next) != NULL);
+	do {
+		envlistptr->envptr->in_use = false;
+	} while ((envlistptr = envlistptr->next) != NULL);
+
+	/* Find all used environments and used expressions. */
+	env *envptr = current_env;
+	dictentry *dictptr;
+	while (envptr != NULL) {
+		dictptr = envptr->list;
+		while (dictptr != NULL) {
+			gc_mark_expr(dictptr->sym);
+			gc_mark_expr(dictptr->value);
+			dictptr = dictptr->next;
+		}
+
+		envptr->in_use = true;
+		envptr = envptr->outer;
+	}
+
+	/* SWEEP */
+
+	int count_expr = 0, count_env = 0, byte_count_env = 0;
+	exprlistptr = saved_expressions;
+	envlistptr = saved_environments;
+
+	expr_list *tmp_expr;
+	env_list *tmp_env;
+
+	expr_list *prev_expr = NULL;
+	env_list *prev_env = NULL;
+
+	/* Free each unused expr and env. */
+	while (exprlistptr != NULL) {
+		if (!exprlistptr->exprptr->in_use) {
+			/* Free the expr if it's  not in_use: */
+			free(exprlistptr->exprptr);
+			/* Free the corresponding struct in the list: */
+			tmp_expr = exprlistptr->next;
+			free(exprlistptr);
+			/* Update the next-pointer of the previous expr: */
+			if (prev_expr == NULL) {
+				saved_expressions = tmp_expr;
+				prev_expr = saved_expressions;
+			} else {
+				prev_expr->next = tmp_expr;
+				prev_expr = prev_expr->next;
+			}
+			exprlistptr = tmp_expr;
+			count_expr++;
+		} else
+			exprlistptr = exprlistptr->next;
+	}
+	while (envlistptr != NULL) {
+		if (!envlistptr->envptr->in_use) {
+			byte_count_env += free_env(envlistptr->envptr);
+			tmp_env = envlistptr->next;
+			free(envlistptr);
+			if (prev_env == NULL) {
+				saved_environments = tmp_env;
+				prev_env = saved_environments;
+			} else {
+				prev_env->next = tmp_env;
+				prev_env = prev_env->next;
+			}
+			envlistptr = tmp_env;
+			count_env++;
+		} else
+			envlistptr = envlistptr->next;
+	}
+
+	printf("Garbage collection done.\n");
+	printf
+	    ("Freed %d expressions (%d bytes).\n", count_expr,
+	     count_expr * sizeof(expr));
+	printf("Freed %d environments (%d bytes).\n", count_env,
+	       byte_count_env);
 	return NULL;
 }
 
-expr *findInDict(expr * e, env * en)
+expr *find_in_dict(expr * e, env * en)
 {
 	if (e == NULL || en == NULL)
 		return NULL;
@@ -67,7 +289,7 @@ expr *findInDict(expr * e, env * en)
 			return d->value;
 		d = d->next;
 	}
-	return findInDict(e, en->outer);
+	return find_in_dict(e, en->outer);
 }
 
 /*
@@ -77,7 +299,7 @@ expr *findInDict(expr * e, env * en)
  * Returns:
  *   a pointer to the list entry i or NULL if none was found.
  */
-expr *getNext(expr * e, int i)
+expr *get_next(expr * e, int i)
 {
 	if (e == NULL || e->type != EXPRLIST || i < 0)
 		return NULL;
@@ -101,7 +323,7 @@ expr *getNext(expr * e, int i)
  * Returns:
  *   the length of the list or -1 if e is not an expression list.
  */
-int getListSize(expr * e)
+int get_list_size(expr * e)
 {
 	if (e == NULL) {
 		print_err("%s", "Argument e is NULL.\n");
@@ -120,46 +342,46 @@ int getListSize(expr * e)
 	return counter;
 }
 
-void _printexpr_rec(expr * e, int level)
+void print_expr_rec(expr * e, int level)
 {
 	if (e == NULL) {
 		printf("nil");
 	} else if (e->type == EXPRLIST) {
 		if (level == 0)
 			printf("%p: ", e);
-		printf("EXPRLIST[");
+		printf(" EXPRLIST[");
 		expr *t = e->listptr;
 		while (t != NULL) {
-			_printexpr_rec(t, ++level);
+			print_expr_rec(t, ++level);
 			t = t->next;
 		}
-		printf("]");
+		printf("] ");
 	} else if (e->type == EXPRINT) {
 		printf(" INT: %lld ", e->intvalue);
 	} else if (e->type == EXPRLAMBDA) {
 		printf("[LAMBDA EXPR ARGS:");
-		_printexpr_rec(e->lambdavars, ++level);
+		print_expr_rec(e->lambdavars, ++level);
 		printf(" BODY ");
-		_printexpr_rec(e->lambdaexpr, ++level);
+		print_expr_rec(e->lambdaexpr, ++level);
 		printf("]");
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
 	}
 }
 
-void printexpr(expr * e)
+void print_expr(expr * e)
 {
-	_printexpr_rec(e, 0);
+	print_expr_rec(e, 0);
 	printf("\n");
 }
 
-void printExprDebug(expr * e)
+void print_expr_debug(expr * e)
 {
 	if (DEBUG)
-		printexpr(e);
+		print_expr(e);
 }
 
-void addToExprlist(expr * list, expr * new)
+void add_to_exprlist(expr * list, expr * new)
 {
 	if (list == 0)
 		return;
@@ -174,19 +396,29 @@ void addToExprlist(expr * list, expr * new)
 	}
 }
 
+static env *create_env(env * outer, dictentry * list)
+{
+	env *new = malloc(sizeof(env));
+	new->outer = outer;
+	new->list = list;
+
+	gc_collect_env(new);
+
+	return new;
+}
+
 static expr *create_expr(enum exprtype type)
 {
 	expr *new = malloc(sizeof(expr));
 	new->type = type;
 	new->next = NULL;
 
-	printf("-> creating new expression: %p (%d Bytes)\n", new,
-	       sizeof(struct expr));
+	gc_collect_expr(new);
 
 	return new;
 }
 
-static expr *createExprProc(struct expr *(*proc) (struct expr *))
+static expr *create_exprproc(struct expr *(*proc) (struct expr *))
 {
 	expr *new = create_expr(EXPRPROC);
 	new->proc = proc;
@@ -194,7 +426,7 @@ static expr *createExprProc(struct expr *(*proc) (struct expr *))
 	return new;
 }
 
-expr *createExprSym(const char *s)
+expr *create_exprsym(const char *s)
 {
 	expr *new = create_expr(EXPRSYM);
 
@@ -208,7 +440,7 @@ expr *createExprSym(const char *s)
 	return new;
 }
 
-expr *createExprInt(int i)
+expr *create_exprint(int i)
 {
 	expr *new = create_expr(EXPRINT);
 	new->intvalue = i;
@@ -216,33 +448,25 @@ expr *createExprInt(int i)
 	return new;
 }
 
-expr *deepCopy(expr * e)
+expr *deep_copy(expr * e)
 {
 	if (e == NULL)
 		return NULL;
+
 	expr *new = create_expr(EXPRSYM);
+	memcpy(new, e, sizeof(expr));
 
-	if (e->type != EXPRLIST) {
-		memcpy(new, e, sizeof(expr));
+	if (new->type != EXPRLIST)
 		return new;
-	}
 
-	new->type = EXPRLIST;
+	expr *listptr_orig = e->listptr;
 
-	expr *te = e->listptr;
-	expr *prev = NULL;
-	while (te != NULL) {
-		expr *savednext = te->next;
-		te = deepCopy(te);
-		if (prev == NULL) {
-			new->listptr = te;
-		} else {
-			prev->next = te;
-			te->next = 0;
-		}
-		prev = te;
-		te->next = savednext;
-		te = savednext;
+	new->listptr = deep_copy(listptr_orig);
+	expr *listptr_new = new->listptr;
+
+	while ((listptr_orig = listptr_orig->next) != NULL) {
+		listptr_new->next = deep_copy(listptr_orig);
+		listptr_new = listptr_new->next;
 	}
 
 	return new;
@@ -258,7 +482,7 @@ expr *deepCopy(expr * e)
  * Returns:
  *   The updated dict entry or NULL if there was an error.
  */
-dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
+dictentry *add_to_env(env * env, expr * sym, expr * value, bool set)
 {
 	if (env == NULL || sym == NULL || value == NULL)
 		return NULL;
@@ -272,7 +496,7 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 				  sym->symvalue);
 			return NULL;
 		} else if (set) {
-			return addToEnv(env->outer, sym, value, set);
+			return add_to_env(env->outer, sym, value, set);
 		}
 		current_dict_entry = malloc(sizeof(dictentry));
 		current_dict_entry->sym = sym;
@@ -288,9 +512,6 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 		if (current_dict_entry->next->sym->type == EXPRSYM
 		    && strcmp(current_dict_entry->next->sym->symvalue,
 			      sym->symvalue) == 0) {
-			/* TODO: Double check whether both frees are necessary/legal. */
-			free(current_dict_entry->next->sym);
-			free(current_dict_entry->next->value);
 			break;
 		}
 		current_dict_entry = current_dict_entry->next;
@@ -299,7 +520,7 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 	/* Add new last entry. */
 	if (current_dict_entry->next == NULL) {
 		if (env->outer != NULL && set) {
-			return addToEnv(env->outer, sym, value, set);
+			return add_to_env(env->outer, sym, value, set);
 		} else if (set) {
 			print_err("Variable '%s' not defined.\n",
 				  sym->symvalue);
@@ -315,8 +536,6 @@ dictentry *addToEnv(env * env, expr * sym, expr * value, bool set)
 
 	return current_dict_entry->next;
 }
-
-env *global_env;
 
 expr *eval(expr *, env *);
 
@@ -352,10 +571,13 @@ expr *evalList(expr * e, env * en)
 expr *eval(expr * e, env * en)
 {
 	debug_info("%s", "eval called with");
-	printExprDebug(e);
+	print_expr_debug(e);
+
+	/* Store the current environment for the garbage collection. */
+	current_env = en;
 
 	if (e->type == EXPRSYM) {
-		expr *res = findInDict(e, en);
+		expr *res = find_in_dict(e, en);
 		if (res == NULL) {
 			print_err("Variable not defined here: %s.\n",
 				  e->symvalue);
@@ -376,15 +598,15 @@ expr *eval(expr * e, env * en)
 	if (e->listptr->type == EXPRSYM
 	    && (strcmp(e->listptr->symvalue, "define") == 0
 		|| strcmp(e->listptr->symvalue, "set!") == 0)) {
-		int size = getListSize(e);
+		int size = get_list_size(e);
 		if (size != 3) {
 			print_err
 			    ("Wrong number of arguments for 'define'/'set!': %d\n",
 			     size);
 			exit(-1);
 		}
-		expr *key = getNext(e, 1);
-		expr *value = getNext(e, 2);
+		expr *key = get_next(e, 1);
+		expr *value = get_next(e, 2);
 		if (key->type != EXPRSYM) {
 			print_err
 			    ("%s",
@@ -392,7 +614,7 @@ expr *eval(expr * e, env * en)
 			exit(-1);
 		}
 		value = eval(value, en);
-		if (addToEnv
+		if (add_to_env
 		    (en, key, value,
 		     strcmp(e->listptr->symvalue, "set!") == 0) == NULL) {
 			print_err("Could not define/set %s.\n", key->symvalue);
@@ -405,21 +627,20 @@ expr *eval(expr * e, env * en)
 	if (e->listptr->type == EXPRSYM
 	    && strcmp(e->listptr->symvalue, "quote") == 0) {
 		expr *next = e->listptr->next;
-		free(e->listptr);
 		e->listptr = next;
 		return e;
 	}
 	/* IF */
 	if (e->listptr->type == EXPRSYM
 	    && strcmp(e->listptr->symvalue, "if") == 0) {
-		if (getListSize(e) != 4) {
+		if (get_list_size(e) != 4) {
 			print_err
 			    ("%s", "Wrong number of arguments for 'if'.\n");
 			exit(-1);
 		}
-		expr *cond = eval(getNext(e, 1), en);
-		expr *trueex = getNext(e, 2);
-		expr *falseex = getNext(e, 3);
+		expr *cond = eval(get_next(e, 1), en);
+		expr *trueex = get_next(e, 2);
+		expr *falseex = get_next(e, 3);
 		if (cond->type == EXPRINT)
 			return eval(trueex, en);
 		else if (cond->type != EXPRSYM) {
@@ -445,7 +666,7 @@ expr *eval(expr * e, env * en)
 	/* LAMBDA */
 	if (e->listptr->type == EXPRSYM
 	    && strcmp(e->listptr->symvalue, "lambda") == 0) {
-		expr *args = getNext(e, 1);
+		expr *args = get_next(e, 1);
 		if (args->type != EXPRLIST) {
 			print_err
 			    ("%s", "First Lambda Parameter must be a list\n");
@@ -461,14 +682,13 @@ expr *eval(expr * e, env * en)
 	}
 	evalList(e, en);
 	if (e->listptr->type == EXPRLAMBDA) {
-		env *newenv = malloc(sizeof(env));
-		newenv->outer = en;
-		newenv->list = 0;
-		int argnum = getListSize(e->listptr->lambdavars);
-		if (argnum != getListSize(e) - 1) {
+		env *newenv = create_env(en, NULL);
+
+		int argnum = get_list_size(e->listptr->lambdavars);
+		if (argnum != get_list_size(e) - 1) {
 			print_err
 			    ("Wrong number of arguments for lambda %d required: %d\n",
-			     argnum, getListSize(e) - 1);
+			     argnum, get_list_size(e) - 1);
 			exit(-1);
 		}
 		expr *args = e->listptr->lambdavars->listptr;
@@ -478,14 +698,14 @@ expr *eval(expr * e, env * en)
 				print_err
 				    ("%s", "Wrong parameter list for lambda\n");
 			}
-			addToEnv(newenv, args, val, false);
+			add_to_env(newenv, args, val, false);
 			args = args->next;
 			val = val->next;
 		}
 		debug_info("%s", "Evaluate Lambda Expr\n");
 		expr *res = 0;
-		printExprDebug(e->listptr->lambdaexpr);
-		expr *lambda_new = deepCopy(e->listptr->lambdaexpr);
+		print_expr_debug(e->listptr->lambdaexpr);
+		expr *lambda_new = deep_copy(e->listptr->lambdaexpr);
 		if (lambda_new->type == EXPRLIST) {
 			debug_info("%s", " as list\n");
 			res = evalList(lambda_new, newenv);
@@ -493,8 +713,6 @@ expr *eval(expr * e, env * en)
 			debug_info("%s", "as single expr\n");
 			expr *res = eval(lambda_new, newenv);
 		}
-		free(newenv);
-		/* TODO: free lambda_new */
 		return res;
 	}
 	if (e->listptr->type == EXPRPROC) {
@@ -502,15 +720,15 @@ expr *eval(expr * e, env * en)
 		/** delete proc from list **/
 		e->listptr = e->listptr->next;
 		debug_info("%s", "Call proc!\n");
-		printExprDebug(e);
+		print_expr_debug(e);
 		expr *res = proc->proc(e);
-		printExprDebug(res);
+		print_expr_debug(res);
 		return res;
 	}
 
 	/* We should never arrive here... */
 	print_err("%s", "Could not evaluate expression: ");
-	printexpr(e);
+	print_expr(e);
 	exit(-1);
 }
 
@@ -530,7 +748,7 @@ expr *read(char *s[])
 		exprlist->listptr = 0;
 		tptr++;
 		while (*tptr != ')') {
-			addToExprlist(exprlist, read(&tptr));
+			add_to_exprlist(exprlist, read(&tptr));
 			for (; *tptr != 0 && *tptr == ' '; tptr++) ;
 		}
 		tptr++;
@@ -604,11 +822,11 @@ expr *math(expr * args, int (*func) (int, int, bool *), int neutral,
 
 		if (as_bool) {
 			if (!b)
-				newexpr = createExprSym(FALSE);
+				newexpr = create_exprsym(FALSE);
 			else
-				newexpr = createExprSym(TRUE);
+				newexpr = create_exprsym(TRUE);
 		} else {
-			newexpr = createExprInt(result);
+			newexpr = create_exprint(result);
 		}
 
 		return newexpr;
@@ -680,18 +898,16 @@ expr *greater(expr * args)
  * Params:
  *   en : the environment which should be initialized.
  */
-void initGlobal(env * en)
+void init_global(env * en)
 {
-	en->outer = 0;
-	en->list = 0;
-	addToEnv(en, createExprSym("gc"), createExprProc(gc), false);
-	addToEnv(en, createExprSym(TRUE), createExprSym(TRUE), false);
-	addToEnv(en, createExprSym(FALSE), createExprSym(FALSE), false);
-	addToEnv(en, createExprSym("+"), createExprProc(add), false);
-	addToEnv(en, createExprSym("-"), createExprProc(sub), false);
-	addToEnv(en, createExprSym("*"), createExprProc(mul), false);
-	addToEnv(en, createExprSym("<"), createExprProc(less), false);
-	addToEnv(en, createExprSym(">"), createExprProc(greater), false);
+	add_to_env(en, create_exprsym("gc"), create_exprproc(gc), false);
+	add_to_env(en, create_exprsym(TRUE), create_exprsym(TRUE), false);
+	add_to_env(en, create_exprsym(FALSE), create_exprsym(FALSE), false);
+	add_to_env(en, create_exprsym("+"), create_exprproc(add), false);
+	add_to_env(en, create_exprsym("-"), create_exprproc(sub), false);
+	add_to_env(en, create_exprsym("*"), create_exprproc(mul), false);
+	add_to_env(en, create_exprsym("<"), create_exprproc(less), false);
+	add_to_env(en, create_exprsym(">"), create_exprproc(greater), false);
 }
 
 expr *test(char *str, env * en)
@@ -699,7 +915,7 @@ expr *test(char *str, env * en)
 	return eval(read(&str), en);
 }
 
-bool testInt(char *str, int intvalue, env * en)
+bool test_int(char *str, int intvalue, env * en)
 {
 
 	char *tmp = str;
@@ -709,7 +925,7 @@ bool testInt(char *str, int intvalue, env * en)
 		return true;
 	}
 	print_err("Test failed for %s : %d. Result: ", tmp, intvalue);
-	printexpr(retval);
+	print_expr(retval);
 	return false;
 }
 
@@ -719,34 +935,29 @@ bool testInt(char *str, int intvalue, env * en)
  *   http://norvig.com/lispytest.py
  * TODO: Remove all of those exit(-1) so we can test several wrong inputs.
  */
-int runTests()
+int run_tests()
 {
-	env *test_env = malloc(sizeof(env));
-	initGlobal(test_env);
-
 	printf("Running tests...\n");
 
-	testInt("(+ 2 2)", 4, test_env);
-	testInt("(+ (* 2 100) (* 1 10))", 210, test_env);
-	testInt("(if (> 6 5) (+ 1 1) (+ 2 2))", 2, test_env);
-	testInt("(if (< 6 5) (+ 1 1) (+ 2 2))", 4, test_env);
-	test("(define x 3)", test_env);
-	testInt("x", 3, test_env);
-	testInt("(+ x x)", 6, test_env);
-	testInt("((lambda (x) (+ x x)) 5)", 10, test_env);
-	test("(define twice (lambda (x) (* 2 x)))", test_env);
-	testInt("(twice 5)", 10, test_env);
-	test("(define fact (lambda (n) (if (< (+ n -1) 1) 1 (* n (fact (+ n -1))))))", test_env);
-	testInt("(fact 10)", 3628800, test_env);
-	test("(define a 0)", test_env);
-	test("(define f_def (lambda (n) (begin (define a n) a)))", test_env);
-	testInt("(f_def 10)", 10, test_env);
-	testInt("a", 0, test_env);
-	test("(define f_set (lambda (n) (begin (set! a n) a)))", test_env);
-	testInt("(f_set 12)", 12, test_env);
-	testInt("a", 12, test_env);
-
-	free(test_env);
+	test_int("(+ 2 2)", 4, global_env);
+	test_int("(+ (* 2 100) (* 1 10))", 210, global_env);
+	test_int("(if (> 6 5) (+ 1 1) (+ 2 2))", 2, global_env);
+	test_int("(if (< 6 5) (+ 1 1) (+ 2 2))", 4, global_env);
+	test("(define x 3)", global_env);
+	test_int("x", 3, global_env);
+	test_int("(+ x x)", 6, global_env);
+	test_int("((lambda (x) (+ x x)) 5)", 10, global_env);
+	test("(define twice (lambda (x) (* 2 x)))", global_env);
+	test_int("(twice 5)", 10, global_env);
+	test("(define fact (lambda (n) (if (< (+ n -1) 1) 1 (* n (fact (+ n -1))))))", global_env);
+	test_int("(fact 10)", 3628800, global_env);
+	test("(define a 0)", global_env);
+	test("(define f_def (lambda (n) (begin (define a n) a)))", global_env);
+	test_int("(f_def 10)", 10, global_env);
+	test_int("a", 0, global_env);
+	test("(define f_set (lambda (n) (begin (set! a n) a)))", global_env);
+	test_int("(f_set 12)", 12, global_env);
+	test_int("a", 12, global_env);
 }
 
 #define MAXINPUT 512
@@ -755,9 +966,9 @@ int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
 	global_env = malloc(sizeof(env));
-	initGlobal(global_env);
+	init_global(global_env);
 #ifdef DEBUG
-	runTests();
+	run_tests();
 #endif
 	printf("Interactive Mini-Scheme interpreter:\n");
 	printf("  available forms are: define, set!, lambda, begin and if.\n");
@@ -771,7 +982,7 @@ int main(int argc, char **argv)
 			*newline = 0;
 		debug_info("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
-		printexpr(eval(read(&ptr), global_env));
+		print_expr(eval(read(&ptr), global_env));
 	}
 	system("/bin/sh");
 }
