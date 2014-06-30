@@ -1,4 +1,5 @@
 #include <stdio.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -61,6 +62,8 @@ typedef struct env_list {
 /* This stores every environment created with `create_env'. */
 static env_list *saved_environments;
 
+void print_expr(expr *);
+
 /*
  * Frees an environment structure as well as the enclosed dictionary.
  * Params:
@@ -106,8 +109,10 @@ expr_list *gc_collect_expr(expr * e)
 
 	expr_list *listptr = saved_expressions;
 	while (listptr->next != NULL) {
-		if (listptr->exprptr == e)
+		if (listptr->exprptr == e) {
+			free(tmp);
 			return listptr;
+		}
 		listptr = listptr->next;
 	}
 	return listptr->next = tmp;
@@ -245,7 +250,6 @@ expr *gc(expr * unused)
 				prev_expr = saved_expressions;
 			} else {
 				prev_expr->next = tmp_expr;
-				prev_expr = prev_expr->next;
 			}
 			exprlistptr = tmp_expr;
 			count_expr++;
@@ -265,14 +269,17 @@ expr *gc(expr * unused)
 			if (prev_env == NULL) {
 				saved_environments = tmp_env;
 				prev_env = saved_environments;
-			} else {
+			} else
 				prev_env->next = tmp_env;
-				prev_env = prev_env->next;
-			}
 			envlistptr = tmp_env;
 			count_env++;
-		} else
+		} else {
 			envlistptr = envlistptr->next;
+			if (prev_env == NULL)
+				prev_env = saved_environments;
+			else
+				prev_env = prev_env->next;
+		}
 	}
 
 	printf("Garbage collection done.\n");
@@ -363,6 +370,8 @@ void print_expr_rec(expr * e, int level)
 		printf("] ");
 	} else if (e->type == EXPRINT) {
 		printf(" INT: %lld ", e->intvalue);
+	} else if (e->type == EXPRPROC) {
+		printf(" PROC: %p ", e->proc);
 	} else if (e->type == EXPRLAMBDA) {
 		printf("[LAMBDA EXPR ARGS:");
 		print_expr_rec(e->lambdavars, ++level);
@@ -970,7 +979,7 @@ int run_tests()
 int main(int argc, char **argv)
 {
 	char inputbuf[MAXINPUT];
-	global_env = malloc(sizeof(env));
+	global_env = create_env(NULL, NULL);
 	init_global(global_env);
 #ifdef DEBUG
 	run_tests();
