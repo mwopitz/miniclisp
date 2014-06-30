@@ -15,7 +15,6 @@ const char *FALSE = "#f";
 
 enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC };
 typedef struct expr {
-	enum exprtype type;
 	union {
 		long int intvalue;
 		char symvalue[MAXTOKENLEN];
@@ -26,6 +25,7 @@ typedef struct expr {
 		};
 		struct expr *(*proc) (struct expr *);
 	};
+	enum exprtype type;
 	struct expr *next;
 	bool in_use;		/* For the garbage collection. */
 } expr;
@@ -249,8 +249,13 @@ expr *gc(expr * unused)
 			}
 			exprlistptr = tmp_expr;
 			count_expr++;
-		} else
+		} else {
 			exprlistptr = exprlistptr->next;
+			if (prev_expr == NULL)
+				prev_expr = saved_expressions;
+			else
+				prev_expr = prev_expr->next;
+		}
 	}
 	while (envlistptr != NULL) {
 		if (!envlistptr->envptr->in_use) {
