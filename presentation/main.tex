@@ -1,0 +1,66 @@
+\documentclass[t,handout]{beamer}
+
+\usetheme{default}          % Check http://www.hartwork.org/beamer-theme-matrix
+\usecolortheme{default}     %  for an overview over themes and colorthemes.
+\usefonttheme{default}
+\useinnertheme{default}
+\useoutertheme{default}
+
+\setbeamercovered{transparent}  % Enable transparent previews for items.
+
+\beamertemplatenavigationsymbolsempty   % Disable the annoying navigation bar.
+
+\setbeamertemplate{footline}[frame number] % show frame numbers.
+
+\usepackage[ngerman]{babel} % New german spelling.
+\usepackage[T1]{fontenc} % Use T1 fonts. Whatever that is...
+\usepackage{lmodern,textcomp} % We need a Euro symbol!
+\usepackage[utf8]{inputenc} % UTF-8 encoding. Umlauts ftw!
+
+\usepackage{lmodern} % Looks arguably better than the default font.
+
+\usepackage{tabularx}
+
+\usepackage{booktabs}
+\newcommand{\tabitem}{~~\llap{\textbullet}~~}
+
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+
+%A nice box for laws and stuff:
+%\setbeamertemplate{blocks}[rounded][shadow=true]
+%\setbeamertemplate{blocks}[framed]
+%\setbeamercolor{block title}{fg=black,bg=gray!40}
+%\setbeamercolor{block body}{fg=black,bg=gray!10}
+%\setbeamerfont{block title}{series=\bfseries}
+
+\usepackage{pgfpages}       % Use pgfpages to resize the slides for printing.
+\pgfpagesuselayout{resize to}[a4paper,border shrink=5mm,landscape]
+
+% Reduce footnote size
+\let\oldfootnotesize\footnotesize
+\renewcommand*{\footnotesize}{\oldfootnotesize\tiny}
+
+\title[Scheme Interpreter]{Scheme Interpreter}
+\author[A. Ruhland, M. Opitz]{
+    Andreas Ruhland, Michael Opitz
+}
+\institute[TUM]{Technische Universität München}
+\date[2.07.2014]{2. Juli 2014}
+
+\begin{document}
+
+\section{Titelseite}
+\frame{\titlepage}
+
+\include{sections/about-scheme}
+
+\begin{frame}[c]
+    \begin{center}
+        \usebeamerfont{section title}Noch Fragen?\par
+    \end{center}
+\end{frame}
+
+%\include{sections/backupslides}
+%\include{sections/quellen}
+
+\end{document}
