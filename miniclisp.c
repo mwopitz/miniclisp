@@ -14,7 +14,7 @@
 const char *TRUE = "#t";
 const char *FALSE = "#f";
 
-enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC };
+enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC, EXPREMPTY };
 typedef struct expr {
 	union {
 		long int intvalue;
@@ -359,29 +359,32 @@ int get_list_size(expr * e)
 	return counter;
 }
 
-void print_expr_rec(expr * e, int level)
+void _print_expr(expr * e, bool verbose)
 {
 	if (e == NULL) {
-		printf("nil");
+		print_err("%s", "Argument e is NULL.");
 	} else if (e->type == EXPRLIST) {
-		if (level == 0)
-			printf("%p: ", e);
-		printf(" EXPRLIST[");
+		printf("%s", verbose ? " EXPRLIST[" : "(");
 		expr *t = e->listptr;
 		while (t != NULL) {
-			print_expr_rec(t, ++level);
+			_print_expr(t, verbose);
 			t = t->next;
 		}
-		printf("] ");
+		printf("%s", verbose ? "] " : ")");
+	} else if (e->type == EXPREMPTY) {
+		printf("%s", verbose ? "()" : " [] ");
 	} else if (e->type == EXPRINT) {
-		printf(" INT: %lld ", e->intvalue);
+		if (verbose)
+			printf(" INT: %ld ", e->intvalue);
+		else
+			printf("%ld", e->intvalue);
 	} else if (e->type == EXPRPROC) {
 		printf(" PROC: %p ", e->proc);
 	} else if (e->type == EXPRLAMBDA) {
 		printf("[LAMBDA EXPR ARGS:");
-		print_expr_rec(e->lambdavars, ++level);
+		_print_expr(e->lambdavars, verbose);
 		printf(" BODY ");
-		print_expr_rec(e->lambdaexpr, ++level);
+		_print_expr(e->lambdaexpr, verbose);
 		printf("]");
 	} else {
 		printf(" SYM:'%s' ", e->symvalue);
@@ -390,7 +393,13 @@ void print_expr_rec(expr * e, int level)
 
 void print_expr(expr * e)
 {
-	print_expr_rec(e, 0);
+	_print_expr(e, true);
+	printf("\n");
+}
+
+void quote_expr(expr * e)
+{
+	_print_expr(e, false);
 	printf("\n");
 }
 
@@ -431,10 +440,16 @@ static expr *create_expr(enum exprtype type)
 	expr *new = malloc(sizeof(expr));
 	new->type = type;
 	new->next = NULL;
+	memset(new->symvalue, 0, sizeof(new->symvalue));
 
 	gc_collect_expr(new);
 
 	return new;
+}
+
+static expr *create_exprempty()
+{
+	return create_expr(EXPREMPTY);
 }
 
 static expr *create_exprproc(struct expr *(*proc) (struct expr *))
@@ -449,17 +464,12 @@ expr *create_exprsym(const char *s)
 {
 	expr *new = create_expr(EXPRSYM);
 
-	int len = strlen(s);
-	if (len >= MAXTOKENLEN - 1) {
-		print_err("%s", "To long token\n");
-		exit(-1);
-	}
-	strcpy(new->symvalue, s);
+	strncat(new->symvalue, s, MAXTOKENLEN);
 
 	return new;
 }
 
-expr *create_exprint(int i)
+expr *create_exprint(long int i)
 {
 	expr *new = create_expr(EXPRINT);
 	new->intvalue = i;
@@ -627,10 +637,9 @@ expr *eval(expr * e, env * en)
 		expr *key = get_next(e, 1);
 		expr *value = get_next(e, 2);
 		if (key->type != EXPRSYM) {
-			print_err
+			print_warn
 			    ("%s",
 			     "Argument 1 for 'define'/'set!' is not a symbol.\n");
-			exit(-1);
 		}
 		value = eval(value, en);
 		if (add_to_env
@@ -779,24 +788,34 @@ expr *read(char *s[])
 		exit(-1);
 		tokenlen = 1;
 	} else {
+		/* Create empty expression. */
+		if (strncmp(tptr, "'()", 3) == 0) {
+			*s = tptr + 3;
+			return create_exprempty();
+		}
+
+		/* Calculate the token length. */
 		for (tokenlen = 0, tmpptr = tptr;
 		     *tmpptr != 0 && *tmpptr != ' ' && *tmpptr != '('
 		     && *tmpptr != ')'; tokenlen++, tmpptr++) ;
-		if (tokenlen >= MAXTOKENLEN - 1) {
-			print_err("%s", "Too long token \n");
-			exit(0);
+
+		expr *new;
+
+		char *endptr = NULL;
+		long int intval = strtol(tptr, &endptr, 0);
+		if (endptr == tptr) {
+			/* Create a symbol if the int parsing fails: */
+			char token[tokenlen + 1];
+			token[tokenlen] = 0;
+			strncpy(token, tptr, tokenlen);
+			new = create_exprsym(token);
+		} else {
+			new = create_exprint(intval);
 		}
-		expr *newexpr = create_expr(EXPRINT);
-		char *afternum = 0;
-		newexpr->intvalue = strtol(tptr, &afternum, 0);
-		if (afternum == tptr) {
-			newexpr->type = EXPRSYM;
-			strncpy(newexpr->symvalue, tptr, tokenlen);
-			newexpr->symvalue[tokenlen] = 0;
-			newexpr->next = 0;
-		}
+
 		*s = tmpptr;
-		return newexpr;
+
+		return new;
 	}
 }
 
