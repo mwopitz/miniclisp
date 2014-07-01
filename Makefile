@@ -1,5 +1,5 @@
 all:
-	gcc -g -o miniclisp miniclisp.c
+	gcc -fstack-protector-all -g -o miniclisp miniclisp.c
 	indent -linux miniclisp.c
 clean:
 	rm miniclisp
