@@ -201,12 +201,17 @@ expr *gc(expr * unused)
 	expr_list *exprlistptr = saved_expressions;
 	env_list *envlistptr = saved_environments;
 
+	int max_exprs = 0;
+	int max_envs = 0;
+
 	/* Mark all exprs and envs as unused. */
 	do {
 		exprlistptr->exprptr->in_use = false;
+		max_exprs++;
 	} while ((exprlistptr = exprlistptr->next) != NULL);
 	do {
 		envlistptr->envptr->in_use = false;
+		max_envs++;
 	} while ((envlistptr = envlistptr->next) != NULL);
 
 	/* Find all used environments and used expressions. */
@@ -284,9 +289,9 @@ expr *gc(expr * unused)
 
 	printf("Garbage collection done.\n");
 	printf
-	    ("Freed %d expressions (%d bytes).\n", count_expr,
+	    ("Freed %d/%d expressions (%d bytes).\n", count_expr, max_exprs,
 	     count_expr * sizeof(expr));
-	printf("Freed %d environments (%d bytes).\n", count_env,
+	printf("Freed %d/%d environments (%d bytes).\n", count_env, max_envs,
 	       byte_count_env);
 	return NULL;
 }
@@ -711,6 +716,7 @@ expr *eval(expr * e, env * en)
 			if (args->type != EXPRSYM) {
 				print_err
 				    ("%s", "Wrong parameter list for lambda\n");
+				exit(-1);
 			}
 			add_to_env(newenv, args, val, false);
 			args = args->next;
