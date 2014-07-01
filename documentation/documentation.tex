@@ -2,6 +2,16 @@
 % http://www.acm.org/sigs/publications/proceedings-templates
 \documentclass{sig-alternate}
 
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+
+\usepackage{listings}
+\usepackage{color}
+\usepackage{textcomp}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks,urlcolor=blue}
+
 % Remove stupid ACM copyright notice.
 \makeatletter
 \def\@copyrightspace{\relax}
@@ -10,7 +20,7 @@
 
 \begin{document}
 
-\title{Scheme Interpreter}
+\title{Binary Exploitation Projekt: Scheme Interpreter}
 
 \numberofauthors{8}
 
@@ -22,5 +32,80 @@ Michael Opitz\email{opitz@in.tum.de}
 }
 
 \maketitle
+
+\section[Einführung]{Einführung}
+Nachdem wir ausführlich über ein Projekt für das Praktikum Binary Explotation
+nachgedacht haben, ist die Entscheidung schließlich auf einen Interpreter
+gefallen. Dieses Projekt erschien uns recht interessant, da beispielsweise
+die JavaScript-Interpreter in Webbrowsern eine kritische Angriffsfläche bieten
+und häufig das Ziel von Exploits sind.
+\par
+Da wir im zeitlichen Rahmen von der Projektarbeit keinen vollständigen
+JavaScript-Interpreter schreiben konnten und unsere Erfahrung mit
+Interpreter-Entwicklung offengestanden eher geringfügig war, haben wir uns
+nach eleganten alternativen Skriptsprachen umgeschaut.
+Wir haben uns schließliche darauf festgelegt, einen Scheme-Interpreter zu
+schreiben, was uns verschiedene Teile der Programmierarbeit erleichtert hat:
+\begin{enumerate}
+  \item Hauptargument für die Verwendung von Scheme war, dass sich diese
+    Skriptsprache als LISP-Dialekt durch eine sehr minimalistische Syntax
+    auszeichnet.
+    \lstinputlisting[language=Scheme, firstline=0]{scheme-example1.txt}
+    Der Fakt dass jeder Ausdruck in Scheme geklammert ist, vereinfacht das
+    Parsing und Tokenizing der Sprache enorm.
+    \par
+    Dazu kommt, dass Scheme-Code praktische nur aus
+    sog. \emph{S-Expressions} besteht, d.h.
+    jeder Ausdruck (S-Expression) ist entweder ein atomarer Ausdruck oder
+    ein Operator mit einer Liste von weiteren Ausdrücken. Diese Struktur
+    ermöglicht es, beim Auswerten der Ausdrücke mit nur sehr wenigen Spezialfällen auszukommen.
+    Lediglich die speziell ausgewerteten Ausdrücke \texttt{define},
+    \texttt{lambda}, \texttt{if}, \texttt{begin}, \texttt{quote}, \texttt{set!}
+    sowie einige wenige weitere, die auf den zuvor genannten aufbauen, müssen
+    im Interpreter eingebaut werden.
+  \item Scheme ist nicht objektorientiert und unterstützt standardmäßig noch
+    nicht einmal Funktionen. Jedoch können mit Lambda-Ausdrücken eigene 
+    Prozeduren geschrieben werden und schon durch das Implementieren
+    von Lambda-Ausdrücken, kann ein Scheme-Interpreter eine Turing-vollständige
+    Teilsprache von Scheme auswerten. Damit war es uns möglich, einen lauffähigen
+    Interpreter zu schreiben, der zur Demonstrationszwecken nur einen kleinen
+    Teil der Sprache Scheme unterstützt, aber trotzdem komplexe Prozeduren
+    verwenden kann.
+\end{enumerate}
+
+\section[Mini-C-Lisp]{Der Mini-C-Lisp-Interpreter}
+Der Mini-C-Lisp-Interpreter  \footnote{Das müsste eigentlich Mini-Scheme-Interpreter heißen, aber wir
+  haben uns recht frühzeitig während der Entwicklungsphase auf diesen Namen
+  für unseren Interpreter geeinigt und auch das Git-Repository danach benannt.
+} ist in reinem C geschrieben und verwendet nur die
+C-Standard-Library. Damit haben wir eine hohe Portabilität und einen sehr
+einfachen Compile-Vorgang. Zusätzlich hat uns die Verwendung von C das Einbauen
+von einer Sicherheitslücke erleichtert.
+\par
+Inspiriert hat uns der \emph{Lispy}-Interpreter von Peter Norvig
+(\url{norvig.com/lispy.html}), der es in beeindruckenden 90 Zeilen Python-Code
+fertigbringt einen funktionierenden Lisp-Interpreter zu schreiben.
+
+\subsection[Quellcode]{Quellcode}
+Der Quellcode für den Interpreter inklusive Exploit, sowie die \LaTeX-Sources
+für diese Dokumentation und die Presentation ist frei verfügbar 
+über folgendes Github-Repository: 
+\url{https://github.com/michaelopitz/miniclisp/}.
+\par
+Der eigentliche Interpreter (\texttt{miniclisp.c}) findet sich im Subdirectory
+\texttt{exploit}.
+\par
+Eine compilete und
+
+
+\subsection[Compiling]{How to Compile}
+Entweder das mitgelieferte Makefile verwenden, oder compilen mit
+\lstinputlisting[language=Scheme, firstline=2, lastline=2]{../exploit/Makefile}
+
+\subsection[Funktionsweise]{Funktionsweise}
+Der Mini-C-Lisp-Interpreter kann ganu
+
+\include{implementation}
+\include{exploit}
 
 \end{document}
