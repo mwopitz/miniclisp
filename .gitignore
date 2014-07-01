@@ -6,6 +6,7 @@
 documentation/*.pdf
 
 exploit/miniclisp
+exploit/hexto32byte
 exploit/projekt.tar
 exploit/exploit1.txt
 exploit/output.tmp
