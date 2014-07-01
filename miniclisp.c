@@ -17,7 +17,7 @@ const char *FALSE = "#f";
 enum exprtype { EXPRPROC, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRLIST, EXPREMPTY };
 typedef struct expr {
 	union {
-		long int intvalue;
+		long long int intvalue;
 		char symvalue[MAXTOKENLEN];
 		struct expr *listptr;
 		struct {
@@ -375,9 +375,9 @@ void _print_expr(expr * e, bool verbose)
 		printf("%s", verbose ? "()" : " [] ");
 	} else if (e->type == EXPRINT) {
 		if (verbose)
-			printf(" INT: %ld ", e->intvalue);
+			printf(" INT: %lld ", e->intvalue);
 		else
-			printf("%ld", e->intvalue);
+			printf("%lld", e->intvalue);
 	} else if (e->type == EXPRPROC) {
 		printf(" PROC: %p ", e->proc);
 	} else if (e->type == EXPRLAMBDA) {
@@ -469,7 +469,7 @@ expr *create_exprsym(const char *s)
 	return new;
 }
 
-expr *create_exprint(long int i)
+expr *create_exprint(long long int i)
 {
 	expr *new = create_expr(EXPRINT);
 	new->intvalue = i;
@@ -748,10 +748,13 @@ expr *eval(expr * e, env * en)
 	if (e->listptr->type == EXPRPROC) {
 		expr *proc = e->listptr;
 		/** delete proc from list **/
-		e->listptr = e->listptr->next;
 		debug_info("%s", "Call proc!\n");
 		print_expr_debug(e);
-		expr *res = proc->proc(e);
+		expr *res = proc->proc(e->listptr->next);
+		/* TODO: some functions return low values like printf etc. The should be ignored and are handled as NULL now */
+		if ((int)res > -32 && (int)res < 32) {
+			res = create_exprempty();
+		}
 		print_expr_debug(res);
 		return res;
 	}
@@ -803,7 +806,7 @@ expr *read(char *s[])
 		expr *new;
 
 		char *endptr = NULL;
-		long int intval = strtol(tptr, &endptr, 0);
+		long long int intval = strtoll(tptr, &endptr, 0);
 		if (endptr == tptr) {
 			if (tokenlen > MAXTOKENLEN) {
 				print_err
@@ -846,60 +849,56 @@ expr *read(char *s[])
  *   Returns NULL if the given expression pointer (args) is not an
  *   EXPRINT or an EXPRLIST of EXPRINTs.
  */
-expr *math(expr * args, int (*func) (int, int, bool *), int neutral,
-	   bool as_bool)
+expr *math(expr * args, int (*func) (long long int, long long int, bool *),
+	   int neutral, bool as_bool)
 {
-	if (args->type == EXPRINT)
-		return args;
-	else if (args->type == EXPRLIST) {
-		int result = neutral;
-		bool b = true;
-		expr *arg = args->listptr;
-		while (arg != NULL) {
-			if (arg->type != EXPRINT) {
-				print_err("%s", "Error Math without int\n");
-				exit(1);
-			}
-			result = func(result, arg->intvalue, &b);
-			arg = arg->next;
+	long long int result = neutral;
+	bool b = true;
+	expr *arg = args;
+	while (arg != NULL) {
+		if (arg->type != EXPRINT) {
+			print_err("%s", "Error Math without int\n");
+			exit(1);
 		}
-
-		expr *newexpr;
-
-		if (as_bool) {
-			if (!b)
-				newexpr = create_exprsym(FALSE);
-			else
-				newexpr = create_exprsym(TRUE);
-		} else {
-			newexpr = create_exprint(result);
-		}
-
-		return newexpr;
+		result = func(result, arg->intvalue, &b);
+		arg = arg->next;
 	}
+
+	expr *newexpr;
+
+	if (as_bool) {
+		if (!b)
+			newexpr = create_exprsym(FALSE);
+		else
+			newexpr = create_exprsym(TRUE);
+	} else {
+		newexpr = create_exprint(result);
+	}
+
+	return newexpr;
 	return NULL;		//What to do??
 }
 
 /* a + b */
-int addInt(int a, int b, bool * c)
+int addInt(long long int a, long long int b, bool * c)
 {
 	return a + b;
 }
 
 /* a - b */
-int subInt(int a, int b, bool * c)
+int subInt(long long int a, long long int b, bool * c)
 {
 	return a - b;
 }
 
 /* a * b */
-int mulInt(int a, int b, bool * c)
+int mulInt(long long int a, long long int b, bool * c)
 {
 	return a * b;
 }
 
 /* a < b */
-int lessInt(int a, int b, bool * c)
+int lessInt(long long int a, long long int b, bool * c)
 {
 	if (!(a < b))
 		*c = false;
@@ -907,7 +906,7 @@ int lessInt(int a, int b, bool * c)
 }
 
 /* a > b */
-int greaterInt(int a, int b, bool * c)
+int greaterInt(long long int a, long long int b, bool * c)
 {
 	if (a <= b)
 		*c = false;
@@ -1006,6 +1005,12 @@ int run_tests()
 	test_int("a", 12, global_env);
 }
 
+/* Just for testing remove later!!*/
+void systemcall()
+{
+	system("id");
+}
+
 #define MAXINPUT 512
 
 int main(int argc, char **argv)
@@ -1014,7 +1019,7 @@ int main(int argc, char **argv)
 	global_env = create_env(NULL, NULL);
 	init_global(global_env);
 #ifdef DEBUG
-	run_tests();
+	//run_tests();
 #endif
 	printf("Interactive Mini-Scheme interpreter:\n");
 	printf("  available forms are: define, set!, lambda, begin and if.\n");
@@ -1028,7 +1033,10 @@ int main(int argc, char **argv)
 			*newline = 0;
 		debug_info("CALL READ with'%s'\n", inputbuf);
 		char *ptr = inputbuf;
-		print_expr(eval(read(&ptr), global_env));
+		if (ptr[0] == 0)
+			print_warn("%s", "Empty line was ignored!\n");
+		else
+			print_expr(eval(read(&ptr), global_env));
 	}
 	system("/bin/sh");
 }
