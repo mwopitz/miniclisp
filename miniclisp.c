@@ -14,7 +14,7 @@
 const char *TRUE = "#t";
 const char *FALSE = "#f";
 
-enum exprtype { EXPRLIST, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRPROC, EXPREMPTY };
+enum exprtype { EXPRPROC, EXPRSYM, EXPRINT, EXPRLAMBDA, EXPRLIST, EXPREMPTY };
 typedef struct expr {
 	union {
 		long int intvalue;
@@ -637,9 +637,10 @@ expr *eval(expr * e, env * en)
 		expr *key = get_next(e, 1);
 		expr *value = get_next(e, 2);
 		if (key->type != EXPRSYM) {
-			print_warn
+			print_err
 			    ("%s",
 			     "Argument 1 for 'define'/'set!' is not a symbol.\n");
+			exit(-1);
 		}
 		value = eval(value, en);
 		if (add_to_env
@@ -804,6 +805,12 @@ expr *read(char *s[])
 		char *endptr = NULL;
 		long int intval = strtol(tptr, &endptr, 0);
 		if (endptr == tptr) {
+			if (tokenlen > MAXTOKENLEN) {
+				print_err
+				    ("Token to long! Maximum token size: %d\n",
+				     MAXTOKENLEN);
+				exit(-1);
+			}
 			/* Create a symbol if the int parsing fails: */
 			char token[tokenlen + 1];
 			token[tokenlen] = 0;
