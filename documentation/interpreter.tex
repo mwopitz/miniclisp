@@ -1,0 +1,33 @@
+\section[Mini-C-Lisp]{Der Mini-C-Lisp-Interpreter}
+Der Mini-C-Lisp-Interpreter  \footnote{Das müsste eigentlich Mini-Scheme-Interpreter heißen, aber wir
+  haben uns recht frühzeitig während der Entwicklungsphase auf diesen Namen
+  für unseren Interpreter geeinigt und auch das Git-Repository danach benannt.
+} ist in reinem C geschrieben und verwendet nur die
+C-Standard-Library. Damit haben wir eine hohe Portabilität und einen sehr
+einfachen Compile-Vorgang. Zusätzlich hat uns die Verwendung von C das Einbauen
+von einer Sicherheitslücke erleichtert.
+\par
+Inspiriert hat uns der \emph{Lispy}-Interpreter von Peter Norvig
+(\url{norvig.com/lispy.html}), der es in beeindruckenden 90 Zeilen Python-Code
+fertigbringt einen funktionierenden Lisp-Interpreter zu schreiben.
+
+\subsection[Quellcode]{Quellcode}
+Der Quellcode für den Interpreter inklusive Exploit, sowie die \LaTeX-Sources
+für diese Dokumentation und die Presentation ist frei verfügbar 
+über folgendes Github-Repository: 
+\url{https://github.com/michaelopitz/miniclisp/}.
+\par
+Der eigentliche Interpreter (\texttt{miniclisp.c}) findet sich im Subdirectory
+\texttt{exploit}.
+\par
+Eine compilete und
+
+
+\subsection[Compiling]{How to Compile}
+Entweder das mitgelieferte Makefile verwenden, oder compilen mit
+\lstinputlisting[language=Scheme, firstline=2, lastline=2]{../exploit/Makefile}
+
+\subsection[Funktionsweise]{Funktionsweise}
+Der Mini-C-Lisp-Interpreter kann ganu
+
+
