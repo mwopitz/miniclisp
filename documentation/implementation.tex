@@ -1,3 +1,59 @@
+\label{implementierung}
 \section[Implementierung]{Implementierung}
 
-add implementation details
+Wir haben uns bei der Entwicklung von Interpreter an der Referenzimplementierung
+von Peter Norvig \ref{lispy} orientiert und eine ähnliche grundliegende
+Struktur verwendet. Sowohl unser MiniCLisp-Interpreter als auch Norvigs
+\emph{Lispy} verwenden eine einfache \emph{Read-eval-print-Schleife}, wobei
+die wichtigste und interessanteste Funktion in beiden Implementierungen die
+\texttt{eval}-Funktion ist, da in dieser die Eigentliche Scheme-Logik
+umgesetzt wird.
+
+\subsection[Datenstrukturen]{Verwendete Datenstrukturen}
+Die zwei wichtigsten Datenstrukturen, die unser Interpreter verwendet, sind 
+\emph{Expressions} (\texttt{struct expr}) und \emph{Environments} (\texttt{struct env}).
+\par
+Expressions werden verwendet um die typischen \emph{S-Expressions} von
+Lisp und Scheme zu implementieren und sie können von der \texttt{eval}-Funktion
+ausgewertet werden. Das \texttt{struct expr} sieht wie folgt aus:
+\lstinputlisting[language=C, firstline=18, lastline=32]{../exploit/miniclisp.c}
+Jede \texttt{expr} hat einen von mehreren Type der in dem Feld \texttt{type}
+steht. Folgende Typen von Expressions verwendet unsere Implementierung:
+\begin{lstlisting}[language=C]
+enum exprtype {
+  EXPRPROC, EXPRSYM, EXPRINT,
+  EXPRLAMBDA, EXPRLIST, EXPREMPTY
+};
+\end{lstlisting}
+Jenachdem welchen Type eine Expression hat, arbeiten wir jeweils nur mit einem
+Feld aus der \texttt{union} innerhalb der \texttt{expr}:
+\begin{itemize}
+    \item Leere Expressions (d.h. \texttt{()}) haben den Typ \texttt{EXPREMPTY}
+      und verwenden keines der Felder aus der \texttt{union}.
+    \item Integerexpressions haben den Typ \texttt{EXPRINT} und verwenden den
+      \texttt{intvalue}.
+    \item Symbolic Expressions, d.h. Variablen, verwenden das
+      \texttt{char}-Array \texttt{symvalue} für den Variablennamen.
+    \item Listen von Expressions handhaben wir, indem wir eine \texttt{expr}
+      mit dem Typ \texttt{EXPRLIST} anlegen und den \texttt{listptr} auf das
+      erste Element in einer einfach verketteten Liste von \texttt{expr}s
+      zeigen lassen. Für diese Liste setzen wir dann die \texttt{next}-Pointer
+      korrekt und können sie so traversieren.
+    \item Für Lambda-Expressions (\texttt{EXPRLAMBDA}) verwenden wir das
+      \texttt{struct} innerhalb der \texttt{union} und setzen die Felder
+      \texttt{lambdavars} auf eine Liste von \texttt{EXPRSYM}s (die Variablen
+      für die Prozedur) und \texttt{lambdaexpr} auf eine \texttt{expr}, die
+      den eigentlichen Körper der Prozedur darstellt.
+    \item Für Expressions vom Typ \texttt{EXPRPROC} (\emph{Procedures}) setzen wir den
+      Funktionspointer \texttt{proc}, womit wir im Prinzip beliebige
+      C-Funktionen für den Interpreter zur Verfügung stellen können.
+      Diese Art von Expressions spielt für unseren Exploit später eine
+      wichtige Rolle.
+      Der Benutzer von dem MiniCLisp-Interpreter kann auf diese Weise keine
+      eigenen Prozeduren definieren, sondern muss für auf Lambdas
+      zurückgreifen. Wir stellen jedoch mittels \texttt{EXPRPROC}s dem 
+      Benutzer funktionen \texttt{+}, \texttt{*}, \texttt{<}, \texttt{gc}, usw.
+      zur Verfügung.
+
+\end{itemize}
+
