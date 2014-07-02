@@ -11,6 +11,8 @@ exploit/projekt.tar
 exploit/exploit1.txt
 exploit/output.tmp
 
+presentation/presentation.pdf
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
