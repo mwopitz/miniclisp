@@ -7,8 +7,9 @@ C-Standard-Library. Damit haben wir eine hohe Portabilität und einen sehr
 einfachen Compile-Vorgang. Zusätzlich hat uns die Verwendung von C das Einbauen
 von einer Sicherheitslücke erleichtert.
 \par
+\label{lispy}
 Inspiriert hat uns der \emph{Lispy}-Interpreter von Peter Norvig
-(\url{norvig.com/lispy.html}), der es in beeindruckenden 90 Zeilen Python-Code
+(\url{http://norvig.com/lispy.html}), der es in beeindruckenden 90 Zeilen Python-Code
 fertigbringt einen funktionierenden Lisp-Interpreter zu schreiben.
 
 \subsection[Quellcode]{Quellcode}
@@ -20,14 +21,63 @@ für diese Dokumentation und die Presentation ist frei verfügbar
 Der eigentliche Interpreter (\texttt{miniclisp.c}) findet sich im Subdirectory
 \texttt{exploit}.
 \par
-Eine compilete und
-
 
 \subsection[Compiling]{How to Compile}
 Entweder das mitgelieferte Makefile verwenden, oder compilen mit
 \lstinputlisting[language=Scheme, firstline=2, lastline=2]{../exploit/Makefile}
 
 \subsection[Funktionsweise]{Funktionsweise}
-Der Mini-C-Lisp-Interpreter kann ganu
+Der Mini-C-Lisp-Interpreter kann ganz normal mit \texttt{./miniclisp}
+gestartet werden. Der Prozess akzeptiert dann Schemecode von stdin
+und versucht diesen zu interpretieren.
+\par
+Das Commandline-IO ist sehr minimalistisch und kann keinen Codeinput
+auswerten, der über mehrere Zeilen geht. \texttt{Enter} bzw. ein
+\texttt{newline}-Character beenden den Codeinput und starten den eigentlichen
+Interpreter. Können die eingegebenen Ausdrücke nicht ausgewertet werde, so
+beendet der Interpreter sofort mit einer Fehlermeldung und muss dann wieder
+neugestartet werden.
+\par
+Eingebaute Forms (speziell ausgewertete Expressions) sind:
+\begin{lstlisting}[language=Scheme]
+define set! lambda begin if
+\end{lstlisting}
+Hier haben wir den \emph{Lispy} von Peter Norvig als Referenz genommen und
+dieselben implementiert, die die einfache Variante von dem \emph{Lispy}
+unterstützt hat.
+\par
+Es sind noch einige wenige weitere manuell definierte Funktionen verfügbar:
+\begin{lstlisting}[language=Scheme]
++ * < >
+\end{lstlisting}
+Damit können wir als \emph{Proof of Concept} einfache Integer-Arithmetik
+ausführen und z.B. die \texttt{faculty}-Funktion aus der Einleitung in
+Scheme implementieren. Hier wäre jedoch noch sehr viel potentieller
+Erweiterungsbedarf, der für unseren eigentlichen Exploit nicht relevant ist.
 
+\subsection[Features]{Fehlende Scheme-Features}
+Unserem Interpreter fehlen neben diversen Standardfunktionen und
+Datenstrukturen noch weiter wichtige Scheme-Features. Der Standard für Scheme
+ist in den \emph{Revised Reports of Scheme}
+\footnote{Der fünfte Report $\text{R}^5$RS ist verfügbar unter:
+\url{http://www.schemers.org/Documents/Standards/R5RS/} und die sechste Version
+R$^6$RS findet sich hier: \url{http://www.r6rs.org/}}
+festgelegt und wird hier zum Vergleich verwendet.
+\begin{itemize}
+  \item Der Scheme-Standard sieht Intergerarithmetik mit beliebiger Präzision
+    vor. Dieses Features wird von unserem Mini-C-Lisp nicht unterstützt, da
+    wir uns auf die Standardlibrary für C beschränkt haben und somit nicht
+    \emph{GMP} (\url{https://gmplib.org})) oder vergleichbares verwenden
+    konnten.
+  \item Optimierung von endrekursiven Funktionen wird ebenfalls vom Standard
+    vorgeschrieben und ist in unserer Implementierung nicht enthalten.
+  \item Scheme unterstützt keine manuelle Speicherverwaltung. Von daher
+    müsste jeder Schemeinterpreter theoretisch eine Garbage-Collection
+    implementieren. Der MiniCLisp-Interpreter beinhaltet eine halbfertig
+    implementierte \emph{Mark-and-Sweep} Garbage-Collection. Diese kann
+    im Interpreter mit dem Befehl \texttt{(gc)} aufgerufen werden. Davon
+    raten wir jedoch ab, da die aktuelle Implementierung diverse wichtige
+    Datenstrukutren nicht korrekt freigibt oder zerstört und beim weiteren
+    Ausführen des Interpreters zu einem Crash führen wird.
+\end{itemize}
 
