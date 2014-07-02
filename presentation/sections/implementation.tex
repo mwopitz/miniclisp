@@ -1,0 +1,45 @@
+\section[Implementation]{Implementation}
+
+\begin{frame}
+    \frametitle{Implementation}
+    \begin{itemize}
+	\item Kein komplexer Syntax Baum $\Rightarrow$ einfach zu parsen
+	\item Sehr wenig Keywords: "define, !set, lambda, begin, if"
+	\item Einige eingebaute Prozeduren wie: "+, *, <, >" 
+	\item Einige fehlende Features wie z.B. Listen
+	\item Lisp Interpreter lispy\footnote{\url{http://norvig.com/lispy.html}} von Peter Norvig 
+		in 90 Zeilen Python Code
+		\pause
+		\begin{itemize}
+			\item Unsere Implementierung > 800 LoC in C
+		\end{itemize}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Implementation Expressions}
+	\begin{lstlisting}[language=C]
+	enum exprtype { EXPRPROC, EXPRSYM, EXPRINT, 
+			EXPRLAMBDA, EXPRLIST, EXPREMPTY };
+	\end{lstlisting}
+	\begin{lstlisting}[language=C]
+	typedef struct expr {
+        union {
+                long long int intvalue;
+                char symvalue[MAXTOKENLEN];
+                struct expr *listptr;
+                struct {
+                        struct expr *lambdavars;
+                        struct expr *lambdaexpr;
+                        struct env *lambdaenv;
+                };
+                struct expr *(*proc) (struct expr *);
+        };
+        enum exprtype type;
+        struct expr *next;
+        bool in_use;
+} expr;
+
+	\end{lstlisting}
+\end{frame}
+~               

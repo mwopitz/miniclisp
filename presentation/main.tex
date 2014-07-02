@@ -1,4 +1,4 @@
-\documentclass[t,handout]{beamer}
+\documentclass[t]{beamer}
 
 \usetheme{default}          % Check http://www.hartwork.org/beamer-theme-matrix
 \usecolortheme{default}     %  for an overview over themes and colorthemes.
@@ -6,7 +6,7 @@
 \useinnertheme{default}
 \useoutertheme{default}
 
-\setbeamercovered{transparent}  % Enable transparent previews for items.
+%\setbeamercovered{transparent}  % Enable transparent previews for items.
 
 \beamertemplatenavigationsymbolsempty   % Disable the annoying navigation bar.
 
@@ -40,6 +40,29 @@
 \let\oldfootnotesize\footnotesize
 \renewcommand*{\footnotesize}{\oldfootnotesize\tiny}
 
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc}
+\usepackage{listings}
+
+\usepackage{listings}
+    \lstset{
+    language=Java,
+    tabsize=8,
+    keepspaces,
+    extendedchars=true,
+    rulecolor=\color{black},
+    basicstyle=\footnotesize,
+    aboveskip=5pt,
+    upquote=true,
+    columns=fixed,
+    showstringspaces=true,
+    extendedchars=true,
+    breaklines=true,
+    frame=single,
+    showtabs=true,
+    showspaces=false,
+    showstringspaces=false,
+}
 \title[Scheme Interpreter]{Scheme Interpreter}
 \author[A. Ruhland, M. Opitz]{
     Andreas Ruhland, Michael Opitz
@@ -53,6 +76,16 @@
 \frame{\titlepage}
 
 \include{sections/about-scheme}
+
+\include{sections/implementation}
+
+\include{sections/exploit}
+
+\begin{frame}[c]
+    \begin{center}
+        \usebeamerfont{section title}Demo!\par
+    \end{center}
+\end{frame}
 
 \begin{frame}[c]
     \begin{center}

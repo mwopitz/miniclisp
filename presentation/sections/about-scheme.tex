@@ -1,5 +1,37 @@
 \section[Scheme]{Scheme}
 
-\begin{frame}
-    \frametitle{Scheme is nice :)}
+\begin{frame}[fragile]
+    \frametitle{How does Scheme work}
+\begin{lstlisting}
+(+ (* 2 100) (* 1 10))
+\end{lstlisting}
+\pause
+=210\\
+\pause
+\begin{lstlisting}
+(define x 3)
+(+ x x)
+\end{lstlisting}
+\pause
+=6
+\pause
+\begin{lstlisting}
+(if (> 6 5) (+ 1 1) (+ 2 2))
+\end{lstlisting}
+\pause
+=2
+\pause
+\begin{lstlisting}
+((lambda (x) (+ x x)) 5)
+\end{lstlisting}
+=10
+\pause
+\begin{lstlisting}
+(define vodoo (lambda (n) (if (< (+ n -1) 1)
+        1 (* n (vodoo (+ n -1))))))
+(vodoo 4)
+\end{lstlisting}
+\pause
+=24
+
 \end{frame}
