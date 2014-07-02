@@ -16,7 +16,7 @@ Die zwei wichtigsten Datenstrukturen, die unser Interpreter verwendet, sind
 Expressions werden verwendet um die typischen \emph{S-Expressions} von
 Lisp und Scheme zu implementieren und sie können von der \texttt{eval}-Funktion
 ausgewertet werden. Das \texttt{struct expr} sieht wie folgt aus:
-\lstinputlisting[language=C, firstline=18, lastline=32]{../exploit/miniclisp.c}
+\lstinputlisting[language=C, firstline=20, lastline=35]{../exploit/miniclisp.c}
 Jede \texttt{expr} hat einen von mehreren Type der in dem Feld \texttt{type}
 steht. Folgende Typen von Expressions verwendet unsere Implementierung:
 \begin{lstlisting}[language=C]
@@ -43,7 +43,10 @@ Feld aus der \texttt{union} innerhalb der \texttt{expr}:
       \texttt{struct} innerhalb der \texttt{union} und setzen die Felder
       \texttt{lambdavars} auf eine Liste von \texttt{EXPRSYM}s (die Variablen
       für die Prozedur) und \texttt{lambdaexpr} auf eine \texttt{expr}, die
-      den eigentlichen Körper der Prozedur darstellt.
+      den eigentlichen Körper der Prozedur darstellt. Mit dem \texttt{env}-Pointer
+      \texttt{lambdaenv} referenzieren wir das Environment, welches beim
+      erstmaligen Auswerten einer Lambdaexpression angelegt wird, damit es für
+      verschachtelte Lambdaexpressions zur Verfügung steht.
     \item Für Expressions vom Typ \texttt{EXPRPROC} (\emph{Procedures}) setzen wir den
       Funktionspointer \texttt{proc}, womit wir im Prinzip beliebige
       C-Funktionen für den Interpreter zur Verfügung stellen können.
@@ -54,6 +57,127 @@ Feld aus der \texttt{union} innerhalb der \texttt{expr}:
       zurückgreifen. Wir stellen jedoch mittels \texttt{EXPRPROC}s dem 
       Benutzer funktionen \texttt{+}, \texttt{*}, \texttt{<}, \texttt{gc}, usw.
       zur Verfügung.
-
 \end{itemize}
+Das \texttt{in\_use}-Flag ist für die (nicht funktionierende) Garbage-Collection
+notwendig.
+\par
+Die zweite wichtige Datenstruktur, die wir in unserem Interpreter verwenden,
+sind Environments, die ein Mapping zwischen Variablennamen und deren Wert
+darstellen. Diese werden insbesondere für \emph{Closures} benötigt, d.h. wenn
+man bespielweise mehrer geklammerte Lambda-Expressions aufruft
+\begin{lstlisting}[language=Scheme]
+    (define f (lambda (a) (lambda (b) (+ a b))))
+    ((f 1) 2)
+\end{lstlisting}
+Wir müssen, in diesem Fall, für die innere Lambda-Expression ein Environment
+speichern, welches das Mapping \texttt{a -> 1} beinhaltet.
+\par
+Environments sind bei uns als simple \texttt{struct}s realisiert:
+\lstinputlisting[language=C, firstline=43, lastline=47]{../exploit/miniclisp.c}
+Jedes Environemnt enthält einen Pointer \texttt{outer} auf das umschließende
+Environment (so dass wir bis hoch zum globalen Environment gehen können, wenn
+ein Variablenname aufgelöst werden muss) und einen Pointer \texttt{list} der
+auf ein simples Dictionary, in welchem die Mappings von Symbolnamen auf 
+Symbolwerte gespeichert werden:
+\lstinputlisting[language=C, firstline=37, lastline=41]{../exploit/miniclisp.c}
 
+\subsection[Read-Loop]{Die read-eval-print-Loop}
+Unsere \texttt{main}-Funktion sieht wie folgt aus:
+\begin{lstlisting}[language=C]
+while(1) {
+  ...
+  fgets(inputbuf, MAXINPUT, stdin);
+  ...
+  char *ptr = inputbuf;
+  ...
+  print_expr(eval(read(&ptr), global_env));
+}
+\end{lstlisting}
+Wir lesen den Commandlineinput mit \texttt{fgets} in einen Buffer ein (an dieser
+Stelle haben wir \emph{keinen} Bufferoverflow) und übergeben diesen dann, in
+der letzten Zeile zuerst an die \texttt{read}-Funktion, die das Parsing und
+Tokenizing übernimmt und die, ausgehend von erzeugten Tokens, neue 
+\texttt{expr}s anlegt. \texttt{read} gibt bei jedem Aufruf eine geparste und 
+neu erzeugte Expression zurück, die anschließend an \texttt{eval} übergeben
+wird. \texttt{eval} gibt anschließend eine komplett ausgewertete Expression
+zurück, deren Wert wir in dem Commandlineinterface ausgeben.
+\par
+
+\subsection[eval]{Die eval-Funktion}
+\begin{lstlisting}[language=C]
+expr *eval(expr *e, env *en)
+\end{lstlisting}
+Der Sinn von \texttt{eval} ist es, die als Argument übergebene Expression mit
+dem gegebenen Environment-Mapping rekursiv auszuwerten. Hierbei muss je nach
+Typ der Expression eine andere Auswertungstechnik verwendet werden.
+Praktischerweise sind mit den Forms, die wir mit unserem Interpreter 
+unterstützen, sämtliche Standardfälle von Scheme abgedeckt und es lassen sich
+theoretisch beliebige Scheme-Expressions auswerten.
+\pre
+Die unterschiedlichen Auswertungstechniken sind folgende:
+\begin{itemize}
+  \item Symbolic Expressions aka Variablen:
+    \begin{lstlisting}[language=C]
+if (e->type == EXPRSYM) {
+  expr *res = find_in_dict(e, en);
+  ...
+  expr *copy = create_expr(EXPRSYM);
+  memcpy(copy, res, sizeof(expr));
+  return copy;
+}
+    \end{lstlisting}
+    Falls \texttt{e} eine Variable ist, suchen wir deren Wert, indem wir
+    rekursiv sämtliche Environments durchgehen (angefangen bei dem lokalen bis
+    hin zum globalen). Anschließend wird hier eine Kopie des Wertes
+    zurückgegeben, damit der Eintrag im Environment nicht durch nachfolgende
+    \texttt{eval}s verändert wird. Bestehende Werte sollten nur mit der
+    Operation \texttt{set!} überschrieben werden können.
+  \item Falls die Expression, die ausgewertet werden soll, vom Typ
+    \texttt{EXPRLIST} ist, gibt es wiederum mehrere Alternativen. Falls der
+    erste Eintrag der Liste wieder eine Symbolic Expression ist und falls
+    deren \texttt{symvalue}, d.h. Name, dem einer eingebauten Expression
+    (\texttt{define}, \texttt{lambda}, etc.) entspricht, müssen wir
+    dementsprechenend eine spezielle Auswertungstechnik anwenden. Andernfalls
+    genügt es, jede einzelne Expression in der List auszuwerten. Für letzteres
+    existiert die \texttt{evalList}-Funktion. Auf die Spezialfälle wird im
+    Folgenden kurz eingegangen:
+    \begin{itemize}
+        \item \texttt{if}: Falls wir es mit einem if-Branch zu tun haben,
+          müssen wir die folgenden drei Expressions in der Liste betrachten:
+\begin{lstlisting}[language=Scheme]
+(if (cond) (true_expr) (false_expr))
+\end{lstlisting}
+          Die \emph{Condition} muss ausgewertet werden und, jenachdem ob als
+          Ergebnis die vordefinierte Symbolic Expression \texttt{\#t} oder
+          \texttt{\#f} zurückgegeben wird, werten wir entweder die dritte
+          oder die vierte Expression aus.
+        \item \texttt{begin}: Dieser Operator wertet eine nachfolgende
+          Liste von Expressions aus und gibt den Wert der letzten ausgewerteten
+          Expression zurück. In diesem Fall setzen wir einfach der auf die
+        Symbolic Expression mit dem Namen \texttt{begin} zeigt, eine Expression
+        weiter nach vorne in der Liste und werten die so neu entstandene Liste
+        mit \texttt{evalList} rekursiv aus.
+        \item \texttt{lambda}: Falls wir eine Expression der folgenden Form
+          vorliegen haben, müssen wir daraus eine neue Lambda-Expression
+          konstruieren:
+\begin{lstlisting}{language=Scheme}
+(lambda (arguments) (body))
+\end{lstlisting}
+        In diesem Fall legen wir mit \texttt{create\_expr} eine neue
+        \texttt{EXPRLAMBDA} an und lassen deren \texttt{lambdavars}-Feld auf
+        die \texttt{arguments} zeigen und das \texttt{lambdaexpr}-Feld auf den 
+        \texttt{body}. Diese neue Lambda-Expression geben wir anschließend
+        zurück.
+    \end{itemize}
+  \item Sollten wir es mit einer Expression vom Typ \texttt{EXPRLAMBDA} zu tun 
+    haben, so müssen wir ein neues Environment anlegen, welches die lokalen
+    Bindings für die Closure speichert. Und wir müssen alle Argumente, die in
+    der Expressionliste \texttt{lambdavars} gespeichert sind, zusammen mit
+    deren Werten, die als ausgewertete Expressionliste auf die 
+    Lambda-Expression folgt, als key-value-Paare in das Environment eintragen.
+    Jetzt können wir die eigentliche Prozedur, die als Pointer
+    \texttt{lambdaexpr} gespeichert wurde, mit dem neuen Environment ausführen.
+    Anschließend speicher wir noch das neu erzeugte Environment in dem Feld
+    \texttt{lambdaenv} in der aktuellen Lambdaexpression, damit es für weitere
+    geklammerte lambdas zur Verfügung steht.
+\end{itemize}
