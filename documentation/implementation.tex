@@ -14,7 +14,7 @@ umgesetzt wird.
 Die zwei wichtigsten Datenstrukturen, die unser Interpreter verwendet, sind 
 \emph{Expressions} (\texttt{struct expr}) und \emph{Environments} (\texttt{struct env}).
 \par
-Expressions werden verwendet um die typischen \emph{S-Expressions} von
+Expressions werden verwendet um die characteristischen \emph{S-Expressions} von
 Lisp und Scheme zu implementieren und sie können von der \texttt{eval}-Funktion
 ausgewertet werden. Das \texttt{struct expr} sieht wie folgt aus:
 \lstinputlisting[language=C, firstline=20, lastline=35]{../exploit/miniclisp.c}
@@ -148,7 +148,7 @@ if (e->type == EXPRSYM) {
 \begin{lstlisting}[language=Scheme]
 (if (cond) (true_expr) (false_expr))
 \end{lstlisting}
-          Die \emph{Condition} muss ausgewertet werden und, jenachdem ob als
+          Die \emph{Condition} muss ausgewertet werden und, je nachdem ob als
           Ergebnis die vordefinierte Symbolic Expression \texttt{\#t} oder
           \texttt{\#f} zurückgegeben wird, werten wir entweder die dritte
           oder die vierte Expression aus.
@@ -172,7 +172,15 @@ if (e->type == EXPRSYM) {
     \end{itemize}
   \item Sollten wir es mit einer Expression vom Typ \texttt{EXPRLAMBDA} zu tun 
     haben, so müssen wir ein neues Environment anlegen, welches die lokalen
-    Bindings für die Closure speichert. Und wir müssen alle Argumente, die in
+    Bindings für die Closure speichert. Sollte für die Expression bereits ein
+    lokales Environment gespeichert sein, verwenden wir dieses weiter:
+\begin{lstlisting}{language=C}
+env *newenv =
+  create_env(e->listptr->lambdaenv ==
+    NULL ? en : 
+      e->listptr->lambdaenv, NULL);
+\end{lstlisting}
+    Und wir müssen alle Argumente, die in
     der Expressionliste \texttt{lambdavars} gespeichert sind, zusammen mit
     deren Werten, die als ausgewertete Expressionliste auf die 
     Lambda-Expression folgt, als key-value-Paare in das Environment eintragen.
@@ -181,4 +189,22 @@ if (e->type == EXPRSYM) {
     Anschließend speicher wir noch das neu erzeugte Environment in dem Feld
     \texttt{lambdaenv} in der aktuellen Lambdaexpression, damit es für weitere
     geklammerte lambdas zur Verfügung steht.
+  \item Der letzte relevante Typ von Expression, der in \texttt{eval} 
+    gesondert behandelt werden muss, sind Procedure Expressions mit denen
+    wir C-Funktionen aufrufen können. Hierfür führen wir einfach die über den
+    Funktionspointer \texttt{proc} festgeleget Funktion aus und übergeben als
+    Argument die nächste Expression in der Liste:
+\begin{lstlisting}[language=C]
+if (e->listptr->type == EXPRPROC) {
+  expr *proc = e->listptr
+  ...
+  expr *res = 
+    proc->proc(e->listptr->next);
+  ...
+  return res;
+\end{lstlisting}
+    Das nächste Argument in der aktuellen Expressionliste könnte wieder eine
+    Expressionliste sein, oder eine einzelne Expression. Das wird von der
+    jeweiligen \texttt{proc}-Funktion individuell gehandhabt.
 \end{itemize}
+
